@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Shelly on the Run! – Prototyp</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#20303c;overflow:hidden;touch-action:none;
+    user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+  #wrap{height:100%;display:flex;align-items:center;justify-content:center}
+  canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#8be0f0}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="320" height="180"></canvas></div>
+<script>
+'use strict';
+/* ============================================================
+   SHELLY ON THE RUN! – Welt 1: Wiesental (Prototyp)
+   Auto-Runner: Tippen = Paddel-Sprung, Halten = Panzer-Roll
+   Aufbau: Level (Tilemap) -> Input -> Physik -> Kollision -> Render
+   ============================================================ */
+
+const cvs = document.getElementById('game');
+const ctx = cvs.getContext('2d');
+const VW = 320, VH = 180, TILE = 16, MAPH = 12;
+
+// ---- Palette (retro, begrenzt) ----
+const PAL = {
+  sky1:'#8be0f0', sky2:'#c9f2f7', sun:'#ffe27a',
+  hillFar:'#a5d977', hillNear:'#6cb84f',
+  grass:'#3e9e46', grassLip:'#7ed957', dirt:'#8a5a33', dirtDark:'#6e4426',
+  rock:'#9aa0a8', rockDark:'#6f757d', log:'#7a4a22', logDark:'#5c3617', logRing:'#9c6a38',
+  door:'#3d2c52', doorBar:'#6a4d8f',
+  body:'#57c956', bodyDark:'#3da53f', shell:'#2f8f4e', shellDark:'#1f6b39', shellHi:'#4db56b',
+  bow:'#ff7bac', bowDark:'#e0538c', board:'#e04a3a', boardHi:'#ff8a70', wheel:'#2b2b2b',
+  crow:'#2e2e44', crowDark:'#1e1e30', crowWing:'#4a4a6e', beak:'#f2a239',
+  salad:'#8fe14f', saladDark:'#5cb82e', shard:'#ffd447', shardHi:'#fff2b0',
+  heart:'#ff5a6a', heartDark:'#c22b3f',
+  txt:'#ffffff', txtShadow:'rgba(20,30,40,0.55)', hint:'#2b5c33'
+};
+
+// ============================================================
+// LEVEL – Tilemap aus Segmenten (leicht iterierbar)
+// Zeichen: . leer | # Boden | R Stein | = Baumstamm (niedrig)
+//          / Rampe hoch | \ Rampe runter | D Tor (Boss-Arena)
+//          s Salat | * Sanduhr-Splitter | P Start
+//          c Kraehen-Wache | z schlafende Kraehe | B Mini-Boss | Z Kaefig (Zip)
+// ============================================================
+const d = n => '.'.repeat(n), G = n => '#'.repeat(n);
+function seg(name, w, rows){
+  const out = { name, w, rows: [] };
+  for(let r = 0; r < 12; r++){
+    let s = rows[r] || '';
+    if(s.length > w) throw new Error('Segment "'+name+'" Zeile '+r+' zu lang ('+s.length+' > '+w+')');
+    out.rows.push(s + d(w - s.length));
+  }
+  return out;
+}
+
+const SEGS = [
+  seg('start', 20, {
+    9:  d(2)+'P'+d(7)+'sss',
+    10: G(20), 11: G(20)
+  }),
+  seg('rocks', 26, {
+    8:  d(6)+'s'+d(9)+'s',
+    9:  d(6)+'R'+d(9)+'R',
+    10: G(26), 11: G(26)
+  }),
+  seg('gap1', 18, {
+    7:  d(6)+'sss',
+    10: G(6)+d(3)+G(9), 11: G(6)+d(3)+G(9)
+  }),
+  seg('logs', 26, {
+    8:  d(6)+'====='+d(5)+'======',
+    9:  d(7)+'sss'+d(6)+'ss*s',
+    10: G(26), 11: G(26)
+  }),
+  seg('ramp1', 30, {
+    7:  d(13)+'sss'+d(7)+'sss',
+    8:  d(7)+'sss'+d(1)+'/'+G(5)+'\\',
+    9:  d(5)+'/'+G(12)+'\\',
+    10: G(23)+d(4)+G(3), 11: G(23)+d(4)+G(3)
+  }),
+  seg('guard1', 24, {
+    9:  d(4)+'sss'+d(3)+'c'+d(5)+'sss',
+    10: G(24), 11: G(24)
+  }),
+  seg('plats', 30, {
+    3:  d(15)+'*',
+    4:  d(14)+G(4),
+    6:  d(8)+'ssss'+d(9)+'ssss',
+    7:  d(8)+G(4)+d(9)+G(4),
+    9:  d(2)+'sss'+d(22)+'sss',
+    10: G(30), 11: G(30)
+  }),
+  seg('sleep', 26, {
+    8:  d(5)+'===='+d(8)+'====',
+    9:  d(10)+'z'+d(2)+'s'+d(1)+'z',
+    10: G(26), 11: G(26)
+  }),
+  seg('gap2', 22, {
+    7:  d(4)+'sss'+d(7)+'sss',
+    9:  d(10)+'R',
+    10: G(4)+d(3)+G(7)+d(3)+G(5), 11: G(4)+d(3)+G(7)+d(3)+G(5)
+  }),
+  seg('guard2', 26, {
+    5:  d(12)+'*',
+    9:  d(3)+'sss'+d(6)+'c'+d(7)+'sss',
+    10: G(26), 11: G(26)
+  }),
+  seg('ramprun', 26, {
+    7:  d(19)+'ssss',
+    8:  d(8)+'/'+G(3)+'\\',
+    9:  d(4)+'/'+G(8)+'\\',
+    10: G(19)+d(4)+G(3), 11: G(19)+d(4)+G(3)
+  }),
+  seg('arena', 30, {
+    4:  d(26)+'D', 5: d(26)+'D', 6: d(26)+'D',
+    7:  d(26)+'D', 8: d(26)+'D',
+    9:  d(14)+'B'+d(11)+'D',
+    10: G(30), 11: G(30)
+  }),
+  seg('finale', 22, {
+    0: d(20)+'##', 1: d(20)+'##', 2: d(20)+'##', 3: d(20)+'##',
+    4: d(20)+'##', 5: d(20)+'##', 6: d(20)+'##', 7: d(20)+'##',
+    8: d(20)+'##',
+    9: d(3)+'ssssss'+d(5)+'Z'+d(5)+'##',
+    10: G(22), 11: G(22)
+  })
+];
+
+// Tile-Codes
+const T_EMPTY=0, T_GROUND=1, T_ROCK=2, T_LOG=3, T_RAMP_UP=4, T_RAMP_DN=5, T_DOOR=6;
+const CHAR2TILE = { '#':T_GROUND, 'R':T_ROCK, '=':T_LOG, '/':T_RAMP_UP, '\\':T_RAMP_DN, 'D':T_DOOR };
+const isSolid = t => t===T_GROUND || t===T_ROCK || t===T_LOG || t===T_DOOR;
+
+let MAPW = 0, grid = [], SEGOFF = {};
+let spawns = [];          // Gegner-Spawn-Beschreibungen
+let collectibles = [];    // Salat + Splitter (persistieren ueber Respawn)
+let cage = null, playerStart = {x:32,y:120};
+let totalSalad = 0, totalShards = 0;
+
+function buildLevel(){
+  MAPW = SEGS.reduce((a,s)=>a+s.w, 0);
+  grid = []; for(let r=0;r<MAPH;r++) grid.push(new Array(MAPW).fill(0));
+  spawns = []; collectibles = []; cage = null;
+  totalSalad = 0; totalShards = 0;
+  let off = 0; SEGOFF = {};
+  for(const s of SEGS){
+    SEGOFF[s.name] = off;
+    for(let r=0;r<MAPH;r++){
+      for(let i=0;i<s.w;i++){
+        const ch = s.rows[r][i], c = off+i;
+        const x = c*TILE, groundY = (r+1)*TILE; // Unterkante der Zelle
+        if(ch==='P'){ playerStart = {x:x, y:groundY - 19}; }
+        else if(ch==='s'){ collectibles.push({kind:'salad', x:x+5, y:r*TILE+5, w:7, h:7, got:false}); totalSalad++; }
+        else if(ch==='*'){ collectibles.push({kind:'shard', x:x+5, y:r*TILE+3, w:7, h:11, got:false}); totalShards++; }
+        else if(ch==='c'){ spawns.push({type:'guard', x:x+1, y:groundY-14}); }
+        else if(ch==='z'){ spawns.push({type:'sleeper', x:x+1, y:groundY-13}); }
+        else if(ch==='B'){ spawns.push({type:'boss', x:x-4, y:groundY-22, doorX:(off+26)*TILE}); }
+        else if(ch==='Z'){ cage = {x:x-3, y:groundY-30, w:22, h:30, open:false}; }
+        else if(CHAR2TILE[ch] !== undefined) grid[r][c] = CHAR2TILE[ch];
+      }
+    }
+    off += s.w;
+  }
+}
+
+function tileAt(c, r){
+  if(c < 0 || c >= MAPW) return T_GROUND;   // Levelraender sind fest
+  if(r < 0 || r >= MAPH) return T_EMPTY;    // unten offen -> Sturz
+  return grid[r][c];
+}
+
+// Tutorial-Hinweise in der Welt (x in Tiles relativ zum Segment)
+let HINTS = [];
+function buildHints(){
+  const H = (segName, col, y, t) => HINTS.push({x:(SEGOFF[segName]+col)*TILE, y, t});
+  HINTS = [];
+  H('start',   5,  86, 'TIPPEN = PADDEL-SPRUNG');
+  H('logs',    4,  70, 'HALTEN = EINROLLEN');
+  H('ramp1',  10,  60, 'BERGAB ROLLEN = SPEED!');
+  H('sleep',   6,  66, 'PSST! LEISE VORBEIROLLEN');
+  H('guard2',  6,  60, 'TIPP BEIM AUFPRALL = HOHER BOUNCE');
+  H('arena',   4,  60, 'DIE WACHE! 3x DRAUFSPRINGEN');
+}
+
+// ============================================================
+// STATE
+// ============================================================
+let state = 'title';   // title | intro | play | rescue | gameover | win
+let stateT = 0;        // Zeit im aktuellen State
+let gt = 0;            // globale Zeit
+let playT = 0;         // Spielzeit des Laufs
+let hearts = 3, saladCount = 0, shardCount = 0;
+let bossDead = false;
+let enemies = [], particles = [];
+let cam = {x:0, y:MAPH*TILE - VH, shake:0};
+let zip = null; // Zip-Animation bei Rettung
+
+const P = {
+  x:0, y:0, w:13, h:19, vx:0, vy:0,
+  grounded:false, lastGroundT:-9, rolling:false, rollA:0,
+  invulnT:0, paddleT:-9, dead:false
+};
+
+// Physik-Konstanten
+const GRAV = 850, JUMP_V = -292, BASE_SPD = 80, MAX_SPD = 205;
+const PADDLE_BOOST = 55, COYOTE = 0.1, JBUF = 0.13;
+
+function resetEnemies(){
+  enemies = [];
+  for(const s of spawns){
+    if(s.type === 'boss' && bossDead) continue;
+    if(s.type === 'guard')
+      enemies.push({type:'guard', x:s.x, y:s.y, w:14, h:14, x0:s.x, dir:1, spd:28, alive:true, t:Math.random()*6});
+    else if(s.type === 'sleeper')
+      enemies.push({type:'sleeper', x:s.x, y:s.y, w:14, h:13, alive:true, awake:false, t:Math.random()*6});
+    else if(s.type === 'boss')
+      enemies.push({type:'boss', x:s.x, y:s.y, w:22, h:22, x0:s.x, doorX:s.doorX, dir:1, spd:52,
+                    hp:3, alive:true, stunT:0, flashT:0, t:0});
+  }
+}
+
+function openDoor(){
+  for(let r=0;r<MAPH;r++) for(let c=0;c<MAPW;c++)
+    if(grid[r][c] === T_DOOR){ grid[r][c] = 0; puff(c*TILE+8, r*TILE+8, PAL.doorBar, 3); }
+  cam.shake = Math.max(cam.shake, 3);
+}
+
+function respawnPlayer(){
+  P.x = playerStart.x; P.y = playerStart.y;
+  P.vx = BASE_SPD; P.vy = 0; P.rolling = false;
+  P.grounded = false; P.invulnT = 1.2;
+  cam.x = Math.max(0, P.x - 100);
+  resetEnemies();
+}
+
+function startRun(){          // kompletter Neustart des Levels
+  buildLevel(); buildHints();
+  hearts = 3; saladCount = 0; shardCount = 0; bossDead = false;
+  particles = []; playT = 0; zip = null;
+  respawnPlayer(); P.invulnT = 0;
+  state = 'play'; stateT = 0;
+}
+
+// ============================================================
+// INPUT  (Touch: Tippen = Sprung, Halten = Rollen | Tastatur: Space / Runter)
+// ============================================================
+let jumpBufT = -9, lastTapT = -9, pointerHeld = false, holdT = 0, keyRoll = false;
+
+function tap(){
+  if(state === 'play'){ jumpBufT = gt; lastTapT = gt; }
+  else menuAdvance();
+}
+function menuAdvance(){
+  if(stateT < 0.5) return; // Doppel-Tipp-Schutz
+  if(state === 'title'){ state = 'intro'; stateT = 0; }
+  else if(state === 'intro'){ startRun(); }
+  else if(state === 'gameover'){ startRun(); }
+  else if(state === 'win'){ state = 'title'; stateT = 0; }
+}
+
+addEventListener('keydown', e => {
+  if(e.repeat) return;
+  if(e.code==='Space' || e.code==='ArrowUp' || e.code==='KeyW'){ tap(); e.preventDefault(); }
+  if(e.code==='ArrowDown' || e.code==='KeyS'){ keyRoll = true; e.preventDefault(); }
+});
+addEventListener('keyup', e => {
+  if(e.code==='ArrowDown' || e.code==='KeyS') keyRoll = false;
+});
+addEventListener('pointerdown', e => { e.preventDefault(); pointerHeld = true; holdT = 0; tap(); });
+addEventListener('pointerup',   () => { pointerHeld = false; });
+addEventListener('pointercancel',() => { pointerHeld = false; });
+addEventListener('touchmove', e => e.preventDefault(), {passive:false});
+
+// ============================================================
+// UPDATE
+// ============================================================
+function hurt(knock){
+  if(P.invulnT > 0) return;
+  hearts--;
+  cam.shake = Math.max(cam.shake, 3);
+  puff(P.x+7, P.y+8, PAL.heart, 6);
+  if(hearts <= 0){ state = 'gameover'; stateT = 0; return; }
+  P.invulnT = 1.4;
+  if(knock){ P.vy = -160; P.vx = BASE_SPD*0.4; }
+}
+
+function fallDeath(){
+  hearts--;
+  if(hearts <= 0){ state = 'gameover'; stateT = 0; return; }
+  respawnPlayer();
+}
+
+function overlap(a, b){
+  return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+}
+
+function headroomFree(){ // Platz zum Aufstehen?
+  const standH = 19, top = P.y + P.h - standH;
+  const r = Math.floor(top/TILE);
+  for(let c = Math.floor((P.x+1)/TILE); c <= Math.floor((P.x+P.w-1)/TILE); c++)
+    if(isSolid(tileAt(c, r))) return false;
+  return true;
+}
+
+function updatePlayer(dt){
+  const wantRoll = keyRoll || (pointerHeld && holdT > 0.13);
+
+  // --- Rollen an/aus ---
+  if(wantRoll && !P.rolling){
+    P.rolling = true;
+    P.y += P.h - 11; P.h = 11; // Hitbox schrumpft (Fuesse bleiben)
+  } else if(!wantRoll && P.rolling && headroomFree()){
+    P.y -= 19 - P.h; P.h = 19;
+    P.rolling = false;
+  }
+
+  // --- Auto-Run + Momentum (leicht rutschig) ---
+  const onDown = onRampType(T_RAMP_DN), onUp = onRampType(T_RAMP_UP);
+  if(P.rolling && P.grounded && onDown){
+    P.vx = Math.min(MAX_SPD, P.vx + 300*dt); // Panzer-Roll bergab = Boost
+  } else if(P.vx < BASE_SPD){
+    P.vx = Math.min(BASE_SPD, P.vx + 170*dt);
+  } else {
+    P.vx = Math.max(BASE_SPD, P.vx - (P.rolling?38:58)*dt); // Boost klingt langsam ab
+  }
+  if(P.grounded && onUp && !P.rolling) P.vx = Math.max(BASE_SPD*0.85, P.vx - 90*dt);
+
+  // --- Sprung (Buffer + Coyote), Paddel-Push ---
+  const canJump = P.grounded || (gt - P.lastGroundT < COYOTE && P.vy >= 0);
+  if(gt - jumpBufT < JBUF && canJump){
+    let ok = true;
+    if(P.rolling){
+      if(headroomFree()){ P.y -= 19 - P.h; P.h = 19; P.rolling = false; }
+      else ok = false; // unter Baumstamm: kein Sprung
+    }
+    if(ok){
+      P.vy = JUMP_V;
+      P.vx = Math.min(MAX_SPD, P.vx + PADDLE_BOOST);
+      P.paddleT = gt;
+      P.grounded = false; jumpBufT = -9;
+      puff(P.x+4, P.y+P.h, '#ffffff', 3);
+    }
+  }
+
+  // --- Gravitation (eingerollt in der Luft: schneller fallen) ---
+  const g = (P.rolling && !P.grounded) ? GRAV*1.55 : GRAV;
+  P.vy = Math.min(P.rolling?460:400, P.vy + g*dt);
+
+  const wasGrounded = P.grounded;
+  P.grounded = false;
+
+  // --- X bewegen + Kollision ---
+  // Fuss-Marge = Step-Assist: kleine Stufen (Rampen-Uebergaenge) blockieren nicht,
+  // volle Tiles (Steine, Waende) schon.
+  P.x += P.vx*dt;
+  {
+    const top = P.y+1, bot = P.y+P.h-(P.rolling?6:10);
+    const c = Math.floor((P.x+P.w)/TILE);
+    for(let r = Math.floor(top/TILE); r <= Math.floor(bot/TILE); r++){
+      const t = tileAt(c, r);
+      if(isSolid(t)){ P.x = c*TILE - P.w - 0.01; break; }
+    }
+  }
+
+  // --- Y bewegen + Kollision ---
+  P.y += P.vy*dt;
+  if(P.vy >= 0){
+    const r = Math.floor((P.y+P.h)/TILE);
+    for(let c = Math.floor((P.x+1)/TILE); c <= Math.floor((P.x+P.w-1)/TILE); c++){
+      if(isSolid(tileAt(c, r))){
+        P.y = r*TILE - P.h; P.vy = 0; P.grounded = true; break;
+      }
+    }
+  } else {
+    const r = Math.floor(P.y/TILE);
+    for(let c = Math.floor((P.x+1)/TILE); c <= Math.floor((P.x+P.w-1)/TILE); c++){
+      if(isSolid(tileAt(c, r))){ P.y = (r+1)*TILE + 0.01; P.vy = 0; break; }
+    }
+  }
+
+  // --- Rampen (45 Grad): Boden unter Spielermitte samplen ---
+  {
+    const cx = P.x + P.w/2, c = Math.floor(cx/TILE);
+    for(let r = 0; r < MAPH; r++){
+      const t = tileAt(c, r);
+      if(t !== T_RAMP_UP && t !== T_RAMP_DN) continue;
+      const f = (cx - c*TILE)/TILE;
+      const surf = t===T_RAMP_UP ? (r+1)*TILE - f*TILE : r*TILE + f*TILE;
+      const stick = wasGrounded ? 10 : 2;
+      if(P.vy >= 0 && P.y+P.h >= surf - stick){
+        P.y = surf - P.h; P.vy = 0; P.grounded = true;
+      }
+      break;
+    }
+  }
+
+  if(P.grounded) P.lastGroundT = gt;
+  if(P.rolling) P.rollA += P.vx*dt/6;
+  P.invulnT = Math.max(0, P.invulnT - dt);
+
+  // --- Sturz in Luecke ---
+  if(P.y > MAPH*TILE + 30){ fallDeath(); return; }
+
+  // --- Collectibles ---
+  for(const it of collectibles){
+    if(it.got) continue;
+    if(overlap(P, it)){
+      it.got = true;
+      if(it.kind === 'salad'){ saladCount++; sparkle(it.x+3, it.y+3, PAL.salad); }
+      else { shardCount++; sparkle(it.x+3, it.y+5, PAL.shard); cam.shake = Math.max(cam.shake,2); }
+    }
+  }
+
+  // --- Kaefig / Level-Ende ---
+  if(cage && !cage.open && overlap(P, cage)){
+    cage.open = true;
+    state = 'rescue'; stateT = 0;
+    zip = {x:cage.x+8, y:cage.y+18, vy:0, hop:0};
+    P.vx = 0;
+    sparkle(cage.x+11, cage.y+10, PAL.shard);
+  }
+}
+
+function onRampType(type){
+  const cx = P.x + P.w/2, c = Math.floor(cx/TILE);
+  for(let r = 0; r < MAPH; r++){
+    const t = tileAt(c, r);
+    if(t === T_RAMP_UP || t === T_RAMP_DN) return t === type;
+  }
+  return false;
+}
+
+function killEnemy(e){
+  e.alive = false;
+  puff(e.x+e.w/2, e.y+e.h/2, PAL.crowWing, 7);
+  puff(e.x+e.w/2, e.y+e.h/2, PAL.crow, 4);
+}
+
+function updateEnemies(dt){
+  for(const e of enemies){
+    if(!e.alive) continue;
+    e.t += dt;
+    if(e.type === 'guard'){
+      e.x += e.dir*e.spd*dt;
+      if(e.x > e.x0+44){ e.x = e.x0+44; e.dir = -1; }
+      if(e.x < e.x0-44){ e.x = e.x0-44; e.dir = 1; }
+    } else if(e.type === 'boss'){
+      e.flashT = Math.max(0, e.flashT-dt);
+      if(e.stunT > 0){ e.stunT -= dt; }
+      else {
+        // verfolgt Shelly innerhalb der Arena
+        const tgt = P.x + P.w/2 - e.w/2;
+        e.dir = tgt > e.x+2 ? 1 : (tgt < e.x-2 ? -1 : e.dir);
+        e.x += e.dir*e.spd*dt;
+        e.x = Math.max(e.x0-90, Math.min(e.doorX - e.w - 4, e.x));
+      }
+    }
+
+    if(!overlap(P, e)) continue;
+
+    if(e.type === 'sleeper'){
+      if(P.rolling || P.invulnT > 0) continue; // leise vorbeirollen
+      e.awake = true;
+      hurt(true);
+      continue;
+    }
+    if(P.rolling && e.type === 'guard'){ killEnemy(e); continue; } // Panzer-Roll zerschmettert
+
+    const stomp = P.vy > 40 && (P.y + P.h) < e.y + e.h*0.65;
+    if(stomp && !P.rolling){
+      const high = (gt - lastTapT) < 0.16; // Shell-Bounce: Tipp beim Aufprall
+      if(e.type === 'boss'){
+        e.hp--; e.flashT = 0.25; e.stunT = 0.6;
+        cam.shake = Math.max(cam.shake, 3);
+        puff(e.x+e.w/2, e.y, '#fff', 4);
+        if(e.hp <= 0){ killEnemy(e); bossDead = true; openDoor(); }
+      } else killEnemy(e);
+      P.vy = high ? -338 : -200;
+      if(high) sparkle(P.x+6, P.y+P.h, PAL.shard);
+      jumpBufT = -9;
+    } else if(e.type === 'boss' && P.rolling){
+      P.vx = -40; P.vy = -140; // Boss blockt den Roll, prallt ab
+    } else {
+      hurt(true);
+    }
+  }
+}
+
+// ---- Partikel ----
+function puff(x, y, col, n){
+  for(let i=0;i<n;i++) particles.push({
+    x, y, vx:(Math.random()-0.5)*90, vy:(Math.random()-0.7)*90,
+    life:0.35+Math.random()*0.3, col, s:2+Math.random()*2
+  });
+}
+function sparkle(x, y, col){
+  for(let i=0;i<6;i++){
+    const a = i/6*Math.PI*2;
+    particles.push({x, y, vx:Math.cos(a)*55, vy:Math.sin(a)*55-25, life:0.4, col, s:2});
+  }
+}
+function updateParticles(dt){
+  for(const p of particles){ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=300*dt; }
+  particles = particles.filter(p => p.life > 0);
+}
+
+function update(dt){
+  stateT += dt;
+  if(pointerHeld) holdT += dt;
+
+  if(state === 'play'){
+    playT += dt;
+    updatePlayer(dt);
+    if(state !== 'play') { updateParticles(dt); return; } // Tod diese Frame
+    updateEnemies(dt);
+    updateParticles(dt);
+    // Kamera
+    const target = Math.max(0, Math.min(P.x - 100, MAPW*TILE - VW));
+    cam.x += (target - cam.x)*Math.min(1, 12*dt);
+    cam.shake = Math.max(0, cam.shake - 14*dt);
+  } else if(state === 'rescue'){
+    updateParticles(dt);
+    if(zip){
+      zip.hop += dt*7;
+      if(stateT > 0.4) zip.x += 18*dt; // Zip huepft raus
+      if(stateT > 0.3 && Math.random() < 0.15)
+        sparkle(cage.x+Math.random()*24, cage.y+Math.random()*24, PAL.shard);
+    }
+    if(stateT > 1.6){ state = 'win'; stateT = 0; }
+  } else {
+    updateParticles(dt);
+  }
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function px(x, y, w, h, c){ ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+function txt(s, x, y, c, size, align){
+  ctx.font = 'bold ' + (size||8) + 'px monospace';
+  ctx.textAlign = align || 'left'; ctx.textBaseline = 'top';
+  ctx.fillStyle = PAL.txtShadow; ctx.fillText(s, Math.round(x)+1, Math.round(y)+1);
+  ctx.fillStyle = c || PAL.txt;  ctx.fillText(s, Math.round(x), Math.round(y));
+}
+const hash = n => { let h = (n*2654435761)>>>0; h ^= h>>13; return (h*2246822519)>>>0; };
+
+const clouds = [];
+for(let i=0;i<9;i++) clouds.push({x:(hash(i)% (MAPW||1) * 37)%1600, y:12+(hash(i+50)%42), s:0.7+((hash(i+9)%10)/10)});
+
+function drawSky(){
+  px(0, 0, VW, VH, PAL.sky1);
+  px(0, 0, VW, 54, PAL.sky2);
+  // Sonne
+  ctx.fillStyle = PAL.sun;
+  ctx.beginPath(); ctx.arc(272, 30, 13, 0, 7); ctx.fill();
+  px(266,24,12,12,PAL.sun);
+  // Wolken (Parallax 0.15)
+  ctx.fillStyle = '#ffffff';
+  for(const cl of clouds){
+    const cx = ((cl.x - cam.x*0.15 + gt*3) % 1700 + 1700) % 1700 - 60;
+    if(cx < -60 || cx > VW+40) continue;
+    px(cx, cl.y, 26*cl.s, 7, '#fff'); px(cx+6, cl.y-4, 14*cl.s, 5, '#fff');
+  }
+  // Huegel-Parallax
+  drawHills(0.35, 118, 34, PAL.hillFar);
+  drawHills(0.6, 136, 26, PAL.hillNear);
+}
+function drawHills(par, baseY, amp, col){
+  ctx.fillStyle = col;
+  const o = cam.x*par;
+  ctx.beginPath(); ctx.moveTo(0, VH);
+  for(let x=0; x<=VW; x+=8){
+    const w = x + o;
+    const y = baseY - amp*(0.5+0.5*Math.sin(w*0.013)) - 8*Math.sin(w*0.037);
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(VW, VH); ctx.closePath(); ctx.fill();
+}
+
+function drawTiles(){
+  const c0 = Math.max(0, Math.floor(cam.x/TILE)), c1 = Math.min(MAPW-1, Math.ceil((cam.x+VW)/TILE));
+  for(let c=c0; c<=c1; c++){
+    for(let r=0; r<MAPH; r++){
+      const t = grid[r][c];
+      const x = c*TILE - cam.x, y = r*TILE - cam.y;
+      if(t === T_GROUND){
+        const above = tileAt(c, r-1);
+        px(x, y, TILE, TILE, PAL.dirt);
+        if(hash(c*31+r*7)%5 === 0) px(x+ (hash(c+r)%12), y+4+(hash(c*3+r)%9), 2, 2, PAL.dirtDark);
+        if(above === T_EMPTY){
+          px(x, y, TILE, 5, PAL.grass);
+          px(x, y, TILE, 2, PAL.grassLip);
+          // Deko: Grashalme / Blumen
+          const h2 = hash(c*13)%10;
+          if(h2 < 3) px(x+3+h2*3, y-3, 1, 3, PAL.grassLip);
+          else if(h2 === 4){ px(x+7, y-3, 1, 3, PAL.grass); px(x+6, y-5, 3, 3, '#ff9ecb'); px(x+7, y-4, 1, 1, PAL.sun); }
+        }
+      } else if(t === T_ROCK){
+        px(x+2, y+4, 12, 12, PAL.rock);
+        px(x+4, y+2, 8, 4, PAL.rock);
+        px(x+3, y+12, 10, 4, PAL.rockDark);
+        px(x+5, y+5, 3, 2, '#c4c9cf');
+      } else if(t === T_LOG){
+        px(x, y+3, TILE, 10, PAL.log);
+        px(x, y+3, TILE, 2, PAL.logRing);
+        px(x, y+11, TILE, 2, PAL.logDark);
+        if(c%3===0){ px(x+5, y+5, 5, 5, PAL.logRing); px(x+7, y+7, 2, 2, PAL.logDark); }
+      } else if(t === T_RAMP_UP){
+        ctx.fillStyle = PAL.dirt;
+        ctx.beginPath(); ctx.moveTo(x, y+TILE); ctx.lineTo(x+TILE, y); ctx.lineTo(x+TILE, y+TILE); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = PAL.grassLip; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, y+TILE-1); ctx.lineTo(x+TILE, y-1); ctx.stroke();
+      } else if(t === T_RAMP_DN){
+        ctx.fillStyle = PAL.dirt;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+TILE, y+TILE); ctx.lineTo(x, y+TILE); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = PAL.grassLip; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, y-1); ctx.lineTo(x+TILE, y+TILE-1); ctx.stroke();
+      } else if(t === T_DOOR){
+        px(x+2, y, 12, TILE, PAL.door);
+        px(x+4, y, 2, TILE, PAL.doorBar);
+        px(x+9, y, 2, TILE, PAL.doorBar);
+      }
+    }
+  }
+}
+
+function drawCollectibles(){
+  for(const it of collectibles){
+    if(it.got) continue;
+    const x = it.x - cam.x, y = it.y - cam.y + Math.sin(gt*4 + it.x*0.05)*1.5;
+    if(x < -12 || x > VW+12) continue;
+    if(it.kind === 'salad'){
+      px(x, y+1, 7, 5, PAL.salad);
+      px(x+1, y, 5, 2, PAL.salad);
+      px(x+3, y+1, 1, 5, PAL.saladDark);
+      px(x+1, y+3, 2, 1, PAL.saladDark);
+    } else {
+      // Sanduhr-Splitter (Diamant)
+      px(x+2, y, 3, 2, PAL.shardHi);
+      px(x+1, y+2, 5, 4, PAL.shard);
+      px(x, y+3, 7, 2, PAL.shard);
+      px(x+2, y+6, 3, 3, PAL.shard);
+      px(x+3, y+9, 1, 2, PAL.shardHi);
+      px(x+2, y+2, 1, 2, PAL.shardHi);
+    }
+  }
+}
+
+function drawCrow(e){
+  const x = Math.round(e.x - cam.x), y = Math.round(e.y - cam.y);
+  if(x < -30 || x > VW+30) return;
+  const flap = Math.sin(e.t*10) > 0 ? 1 : 0;
+  const dir = e.dir || 1;
+  if(e.type === 'boss'){
+    const fl = e.flashT > 0 && Math.floor(gt*20)%2 === 0;
+    const B = fl ? '#ffffff' : PAL.crow, W = fl ? '#ffffff' : PAL.crowWing;
+    px(x, y+4, 22, 16, B);                 // Koerper
+    px(x+2, y+8-flap*2, 18, 5, W);         // Fluegel
+    px(x+(dir>0?14:0), y, 10, 9, B);       // Kopf
+    px(x+(dir>0?22:-4), y+3, 4, 3, PAL.beak);
+    px(x+(dir>0?18:3), y+2, 3, 3, '#ff4444'); // boeses Auge
+    px(x+(dir>0?15:2), y-3, 3, 3, PAL.shard); // Krone
+    px(x+(dir>0?18:5), y-4, 3, 4, PAL.shard);
+    px(x+4, y+20, 3, 3, PAL.beak); px(x+14, y+20, 3, 3, PAL.beak);
+    // HP-Anzeige
+    for(let i=0;i<3;i++) px(x+2+i*7, y-10, 5, 4, i < e.hp ? PAL.heart : '#00000044');
+  } else if(e.type === 'sleeper'){
+    px(x+1, y+3, 12, 10, PAL.crow);
+    px(x+2, y+6, 10, 3, PAL.crowWing);
+    px(x+(e.awake?8:7), y, 7, 7, PAL.crow);
+    px(x+13, y+2, 3, 2, PAL.beak);
+    if(e.awake){ px(x+11, y+1, 2, 2, '#ff4444'); }
+    else {
+      px(x+10, y+2, 3, 1, '#888'); // geschlossenes Auge
+      txt('z', x+13, y-10 + Math.sin(e.t*2)*2, '#ffffffcc', 7);
+    }
+    px(x+3, y+13, 2, 2, PAL.beak); px(x+9, y+13, 2, 2, PAL.beak);
+  } else {
+    px(x+1, y+3, 12, 9, PAL.crow);
+    px(x+2, y+5-flap, 9, 4, PAL.crowWing);
+    px(x+(dir>0?7:0), y, 7, 7, PAL.crow);
+    px(x+(dir>0?13:-2), y+2, 3, 2, PAL.beak);
+    px(x+(dir>0?10:2), y+1, 2, 2, '#ffd447');
+    px(x+3, y+12, 2, 2, PAL.beak); px(x+9, y+12, 2, 2, PAL.beak);
+  }
+}
+
+function drawCage(){
+  if(!cage) return;
+  const x = Math.round(cage.x - cam.x), y = Math.round(cage.y - cam.y);
+  if(x < -40 || x > VW+40) return;
+  // Zip im Kaefig (oder befreit)
+  if(!cage.open){
+    drawZip(x+7, y+17, 0);
+  }
+  px(x-2, y+cage.h-2, cage.w+4, 3, '#b8860b');       // Sockel
+  px(x-2, y-2, cage.w+4, 3, '#b8860b');              // Deckel
+  const barCol = '#e8b83a';
+  if(cage.open){
+    px(x, y, 2, cage.h, barCol); px(x+cage.w-2, y, 2, cage.h, barCol);
+    // Tuer aufgeklappt
+    px(x+cage.w+2, y+2, 2, cage.h-8, barCol);
+  } else {
+    for(let i=0;i<=cage.w-2;i+=5) px(x+i, y, 2, cage.h, barCol);
+  }
+  txt('ZIP', x+cage.w/2, y-12, '#fff', 7, 'center');
+}
+function drawZip(x, y, hop){
+  const dy = -Math.abs(Math.sin(hop))*4;
+  px(x, y+3+dy, 9, 5, '#8ee000');       // Koerper
+  px(x+7, y+dy, 5, 5, '#8ee000');       // Kopf
+  px(x+10, y+1+dy, 1, 1, '#000');       // Auge
+  px(x-4, y+4+dy, 5, 2, '#6cb400');     // Schwanz
+  px(x+1, y+8+dy, 2, 2, '#6cb400'); px(x+6, y+8+dy, 2, 2, '#6cb400');
+}
+
+function drawShelly(){
+  if(P.invulnT > 0 && Math.floor(gt*12)%2 === 0 && state === 'play') return; // Blinken
+  const x = Math.round(P.x - cam.x), y = Math.round(P.y - cam.y);
+  const cxm = x + P.w/2;
+  const boardY = y + P.h - 4;
+  // Skateboard
+  px(cxm-10, boardY, 20, 3, PAL.board);
+  px(cxm-8, boardY, 16, 1, PAL.boardHi);
+  px(cxm-7, boardY+3, 3, 2, PAL.wheel);
+  px(cxm+4, boardY+3, 3, 2, PAL.wheel);
+  if(P.vx > 130){ // Speed-Linien
+    px(x-8, boardY-2, 5, 1, '#ffffff88'); px(x-12, boardY-6, 6, 1, '#ffffff66');
+  }
+  if(P.rolling){
+    // eingerollter Panzer
+    const cy = boardY - 6;
+    ctx.fillStyle = PAL.shell;
+    ctx.beginPath(); ctx.arc(cxm, cy, 6.5, 0, 7); ctx.fill();
+    ctx.fillStyle = PAL.shellDark;
+    ctx.beginPath(); ctx.arc(cxm, cy, 6.5, P.rollA, P.rollA+1.1); ctx.lineTo(cxm, cy); ctx.fill();
+    ctx.beginPath(); ctx.arc(cxm, cy, 6.5, P.rollA+3.1, P.rollA+4.2); ctx.lineTo(cxm, cy); ctx.fill();
+    px(cxm-2, cy-2, 3, 3, PAL.shellHi);
+    px(cxm+3, cy-6, 3, 2, PAL.bow); // Schleife blitzt hervor
+  } else {
+    const bob = P.grounded ? Math.round(Math.sin(gt*13))* 1 : 0;
+    // Beine
+    px(x+2, boardY-3, 3, 4, PAL.bodyDark);
+    px(x+8, boardY-3, 3, 4, PAL.bodyDark);
+    // Panzer
+    px(x-1, y+4+bob, 12, 9, PAL.shell);
+    px(x, y+3+bob, 10, 3, PAL.shellHi);
+    px(x+1, y+11+bob, 9, 2, PAL.shellDark);
+    px(x+3, y+6+bob, 3, 3, PAL.shellDark); px(x+7, y+7+bob, 2, 2, PAL.shellDark);
+    // Kopf (nach rechts)
+    px(x+9, y+1+bob, 7, 7, PAL.body);
+    px(x+13, y+3+bob, 2, 2, '#fff'); px(x+14, y+3+bob, 1, 2, '#123');
+    px(x+11, y+6+bob, 3, 1, PAL.bodyDark); // Laecheln
+    // rosa Schleife
+    px(x, y+bob, 3, 3, PAL.bow); px(x+4, y+bob, 3, 3, PAL.bow);
+    px(x+3, y+1+bob, 1, 1, PAL.bowDark);
+    // Paddel-Arm (Animation nach Tipp)
+    const pd = gt - P.paddleT;
+    if(pd < 0.28){
+      const sw = Math.sin(pd/0.28*Math.PI);
+      px(x+4, y+9+bob+sw*4, 3, 5, PAL.body);
+    } else {
+      px(x+5, y+11+bob, 3, 3, PAL.body);
+    }
+  }
+}
+
+function drawParticles(){
+  for(const p of particles) px(p.x - cam.x, p.y - cam.y, p.s, p.s, p.col);
+}
+
+function drawHints(){
+  for(const h of HINTS){
+    const x = h.x - cam.x;
+    if(x < -180 || x > VW+40) continue;
+    txt(h.t, x, h.y - cam.y, '#1d5c2a', 7);
+  }
+}
+
+function drawHeart(x, y, full){
+  const c = full ? PAL.heart : '#00000033', c2 = full ? PAL.heartDark : '#00000033';
+  px(x, y, 3, 2, c); px(x+4, y, 3, 2, c);
+  px(x, y+2, 7, 2, c);
+  px(x+1, y+4, 5, 2, c2);
+  px(x+2, y+6, 3, 1, c2);
+}
+function drawHUD(){
+  for(let i=0;i<3;i++) drawHeart(6+i*10, 6, i < hearts);
+  // Salat-Zaehler
+  px(6, 17, 7, 5, PAL.salad); px(7, 16, 5, 2, PAL.salad); px(9, 17, 1, 5, PAL.saladDark);
+  txt('x'+saladCount, 16, 15, '#fff', 8);
+  // Splitter
+  for(let i=0;i<3;i++){
+    const x = VW-14-i*11, got = i < shardCount;
+    px(x+1, 6, 4, 2, got?PAL.shardHi:'#00000033');
+    px(x, 8, 6, 4, got?PAL.shard:'#00000033');
+    px(x+1, 12, 4, 2, got?PAL.shard:'#00000033');
+  }
+}
+
+function panel(w, h){
+  const x = (VW-w)/2, y = (VH-h)/2;
+  px(x-2, y-2, w+4, h+4, '#2e4a2e');
+  px(x, y, w, h, '#f7efd2');
+  px(x, y, w, 3, '#e0d3a8');
+  return {x, y};
+}
+
+function fmtTime(t){
+  const m = Math.floor(t/60), s = Math.floor(t%60);
+  return m + ':' + (s<10?'0':'') + s;
+}
+
+function drawTitle(){
+  drawSky();
+  // Boden-Streifen
+  px(0, 150, VW, 30, PAL.grass); px(0, 150, VW, 3, PAL.grassLip);
+  txt('SHELLY', VW/2, 24, '#2e7d32', 22, 'center');
+  txt('ON THE RUN!', VW/2, 48, '#e04a3a', 18, 'center');
+  txt('Ein Panzer. Ein Board. Keine Gnade.', VW/2, 76, '#3a5566', 8, 'center');
+  // grosse Shelly
+  const ox = VW/2-10, oy = 108;
+  px(ox-14, oy+22, 40, 5, PAL.board); px(ox-10, oy+22, 32, 2, PAL.boardHi);
+  px(ox-8, oy+27, 5, 4, PAL.wheel); px(ox+14, oy+27, 5, 4, PAL.wheel);
+  px(ox-8, oy+2, 24, 16, PAL.shell); px(ox-6, oy, 20, 5, PAL.shellHi);
+  px(ox+12, oy-4, 13, 13, PAL.body);
+  px(ox+19, oy-1, 4, 4, '#fff'); px(ox+21, oy-1, 2, 4, '#123');
+  px(ox-6, oy-6, 6, 6, PAL.bow); px(ox+2, oy-6, 6, 6, PAL.bow); px(ox, oy-4, 2, 2, PAL.bowDark);
+  px(ox-4, oy+18, 5, 5, PAL.bodyDark); px(ox+6, oy+18, 5, 5, PAL.bodyDark);
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder LEERTASTE', VW/2, 158, '#fff', 9, 'center');
+  txt('PROTOTYP v0.1 - WELT 1: WIESENTAL', VW/2, 170, '#ffffff99', 6, 'center');
+}
+
+function drawIntro(){
+  drawSky();
+  const p = panel(280, 140);
+  txt('DAS TAL DER TIERE', VW/2, p.y+8, '#8a2be2', 10, 'center');
+  const L = [
+    'Rabenkoenig CORVO hat Shellys schnelle',
+    'Freunde entfuehrt - Poppy, Nio und Zip.',
+    'Nur die "langsame" Schildkroete liess',
+    'er zurueck. Sein Fehler.',
+    '',
+    'Shelly schnappt sich ein Fingerskateboard.',
+    'Rette ZIP aus dem Kaefig!',
+  ];
+  L.forEach((l,i)=>txt(l, VW/2, p.y+26+i*11, '#33424e', 8, 'center'));
+  txt('TIPPEN = Paddeln + Springen', VW/2, p.y+108, '#2e7d32', 8, 'center');
+  txt('HALTEN / RUNTER = Panzer-Roll', VW/2, p.y+119, '#2e7d32', 8, 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('- Tippen zum Start -', VW/2, p.y+132, '#e04a3a', 8, 'center');
+}
+
+function drawGameOver(){
+  px(0, 0, VW, VH, 'rgba(20,15,35,0.75)');
+  txt('MIST!', VW/2, 48, '#ff5a6a', 22, 'center');
+  txt('Corvos Kraehen lachen dich aus...', VW/2, 80, '#ddd', 8, 'center');
+  txt('"Zu langsam! Kraah!"', VW/2, 94, '#aaa', 8, 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN = Nochmal versuchen', VW/2, 130, '#fff', 9, 'center');
+}
+
+function drawWin(){
+  px(0, 0, VW, VH, 'rgba(20,40,25,0.72)');
+  txt('GERETTET!', VW/2, 30, '#7ed957', 22, 'center');
+  drawZip(VW/2-6, 60, gt*5);
+  txt('"Danke Shelly! Du bist die Schnellste', VW/2, 82, '#eee', 8, 'center');
+  txt('von allen - auf deine Art!"', VW/2, 93, '#eee', 8, 'center');
+  txt('Salat: ' + saladCount + ' / ' + totalSalad, VW/2, 114, '#8fe14f', 9, 'center');
+  txt('Splitter: ' + shardCount + ' / ' + totalShards, VW/2, 126, PAL.shard, 9, 'center');
+  txt('Zeit: ' + fmtTime(playT), VW/2, 138, '#fff', 9, 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN = Zurueck zum Titel', VW/2, 160, '#fff', 8, 'center');
+}
+
+function render(){
+  if(state === 'title'){ drawTitle(); return; }
+  if(state === 'intro'){ drawIntro(); return; }
+
+  // Welt (auch als Hintergrund fuer Overlays)
+  ctx.save();
+  if(cam.shake > 0) ctx.translate((Math.random()-0.5)*cam.shake, (Math.random()-0.5)*cam.shake);
+  drawSky();
+  drawTiles();
+  drawCage();
+  drawCollectibles();
+  for(const e of enemies) if(e.alive) drawCrow(e);
+  if(state === 'rescue' && zip) drawZip(zip.x - cam.x, zip.y - cam.y, zip.hop);
+  drawShelly();
+  drawParticles();
+  drawHints();
+  ctx.restore();
+  drawHUD();
+
+  if(state === 'gameover') drawGameOver();
+  else if(state === 'win') drawWin();
+  else if(state === 'rescue') txt('ZIP IST FREI!', VW/2, 40, '#fff', 12, 'center');
+}
+
+// ============================================================
+// LOOP + RESIZE
+// ============================================================
+let lastT = 0;
+function loop(ms){
+  const t = ms/1000;
+  let dt = Math.min(0.05, t - lastT || 0.016);
+  lastT = t; gt += dt;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+function resize(){
+  const s = Math.min(innerWidth/VW, innerHeight/VH);
+  cvs.style.width = Math.floor(VW*s) + 'px';
+  cvs.style.height = Math.floor(VH*s) + 'px';
+}
+addEventListener('resize', resize);
+
+buildLevel(); buildHints(); resetEnemies();
+respawnPlayer(); P.invulnT = 0;
+resize();
+requestAnimationFrame(loop);
+
+// Debug-Zugriff (Prototyp)
+window.G = { P, get state(){return state;}, set state(s){state=s;}, get grid(){return grid;},
+  get enemies(){return enemies;}, get hearts(){return hearts;}, cam, startRun,
+  get collectibles(){return collectibles;}, get cage(){return cage;} };
+</script>
+</body>
+</html>
