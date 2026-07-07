@@ -1,0 +1,8 @@
+{
+  "appId": "com.hardsoft.shelly",
+  "appName": "Shelly on the Run",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#20303c"
+  }
+}

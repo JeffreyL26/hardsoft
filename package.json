@@ -1,0 +1,18 @@
+{
+  "name": "shelly-on-the-run",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shelly on the Run - HTML5 canvas runner packaged with Capacitor",
+  "scripts": {
+    "sync": "cap sync android",
+    "build:android": "cd android && gradlew.bat assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/core": "^6.2.1"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.1"
+  }
+}

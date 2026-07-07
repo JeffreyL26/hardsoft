@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Shelly on the Run! – Prototyp</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#20303c;overflow:hidden;touch-action:none;
+    user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+  #wrap{height:100%;display:flex;align-items:center;justify-content:center}
+  canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#8be0f0}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="320" height="180"></canvas></div>
+<script>
+'use strict';
+/* ============================================================
+   SHELLY ON THE RUN! – Welt 1: Wiesental (Prototyp)
+   Auto-Runner: Tippen = Paddel-Sprung, Halten = Panzer-Roll
+   Aufbau: Level (Tilemap) -> Input -> Physik -> Kollision -> Render
+   Grafik: Textur-Atlas (Offscreen-Canvases, einmal vorgerendert)
+   ============================================================ */
+
+const cvs = document.getElementById('game');
+const ctx = cvs.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const VW = 320, VH = 180, TILE = 16, MAPH = 12;
+
+// ---- Palette (retro, begrenzt – Basistoene unveraendert,
+//      nur um Schattierungen fuer die Texturen erweitert) ----
+const PAL = {
+  sky1:'#8be0f0', sky2:'#c9f2f7', sun:'#ffe27a',
+  hillFar:'#a5d977', hillNear:'#6cb84f',
+  grass:'#3e9e46', grassLip:'#7ed957', dirt:'#8a5a33', dirtDark:'#6e4426',
+  rock:'#9aa0a8', rockDark:'#6f757d', log:'#7a4a22', logDark:'#5c3617', logRing:'#9c6a38',
+  door:'#3d2c52', doorBar:'#6a4d8f',
+  body:'#57c956', bodyDark:'#3da53f', shell:'#2f8f4e', shellDark:'#1f6b39', shellHi:'#4db56b',
+  bow:'#ff7bac', bowDark:'#e0538c', board:'#e04a3a', boardHi:'#ff8a70', wheel:'#2b2b2b',
+  crow:'#2e2e44', crowDark:'#1e1e30', crowWing:'#4a4a6e', beak:'#f2a239',
+  salad:'#8fe14f', saladDark:'#5cb82e', shard:'#ffd447', shardHi:'#fff2b0',
+  heart:'#ff5a6a', heartDark:'#c22b3f',
+  txt:'#ffffff', txtShadow:'rgba(20,30,40,0.55)', hint:'#2b5c33',
+  // --- neue Schattierungen (Textur-Upgrade) ---
+  sky3:'#a9e9f4', sunHi:'#fff3b8', sunRay:'rgba(255,226,122,0.4)',
+  hillFarHi:'#b6e28c', hillNearHi:'#7cc45e',
+  treeFar:'#8fc863', treeFarDk:'#7cb655',
+  bush:'#579a3c', bushHi:'#7cc45e', bushDk:'#41802f',
+  grassDk:'#2f8637', dirtMid:'#7a4e2b', dirtDeep:'#5f3b20', dirtDeep2:'#4a2d16',
+  pebble:'#a9825a', pebbleHi:'#caa87b',
+  rockHi:'#c4c9cf', moss:'#5aa14e', mossDk:'#417f3c',
+  belly:'#e6cf8e', shellPlate:'#3aa25c', bowHi:'#ffa9c9',
+  gold:'#e8b83a', goldHi:'#ffe08a', goldDk:'#b8860b',
+  cloudShade:'#dff3f9', doorDark:'#2a1c3d', doorSeam:'#332246',
+  saladHi:'#b8f078', shardDk:'#dca818',
+  dust1:'#cbb491', dust2:'#e8dcbb', flower:'#ff9ecb'
+};
+
+// ============================================================
+// LEVEL – Tilemap aus Segmenten (leicht iterierbar)
+// Zeichen: . leer | # Boden | R Stein | = Baumstamm (niedrig)
+//          / Rampe hoch | \ Rampe runter | D Tor (Boss-Arena)
+//          s Salat | * Sanduhr-Splitter | P Start
+//          c Kraehen-Wache | z schlafende Kraehe | B Mini-Boss | Z Kaefig (Zip)
+// ============================================================
+const d = n => '.'.repeat(n), G = n => '#'.repeat(n);
+function seg(name, w, rows){
+  const out = { name, w, rows: [] };
+  for(let r = 0; r < 12; r++){
+    let s = rows[r] || '';
+    if(s.length > w) throw new Error('Segment "'+name+'" Zeile '+r+' zu lang ('+s.length+' > '+w+')');
+    out.rows.push(s + d(w - s.length));
+  }
+  return out;
+}
+
+const SEGS = [
+  seg('start', 20, {
+    9:  d(2)+'P'+d(7)+'sss',
+    10: G(20), 11: G(20)
+  }),
+  seg('rocks', 26, {
+    8:  d(6)+'s'+d(9)+'s',
+    9:  d(6)+'R'+d(9)+'R',
+    10: G(26), 11: G(26)
+  }),
+  seg('gap1', 18, {
+    7:  d(6)+'sss',
+    10: G(6)+d(3)+G(9), 11: G(6)+d(3)+G(9)
+  }),
+  seg('logs', 26, {
+    8:  d(6)+'====='+d(5)+'======',
+    9:  d(7)+'sss'+d(6)+'ss*s',
+    10: G(26), 11: G(26)
+  }),
+  seg('ramp1', 30, {
+    7:  d(13)+'sss'+d(7)+'sss',
+    8:  d(7)+'sss'+d(1)+'/'+G(5)+'\\',
+    9:  d(5)+'/'+G(12)+'\\',
+    10: G(23)+d(4)+G(3), 11: G(23)+d(4)+G(3)
+  }),
+  seg('guard1', 24, {
+    9:  d(4)+'sss'+d(3)+'c'+d(5)+'sss',
+    10: G(24), 11: G(24)
+  }),
+  seg('plats', 30, {
+    3:  d(15)+'*',
+    4:  d(14)+G(4),
+    6:  d(8)+'ssss'+d(9)+'ssss',
+    7:  d(8)+G(4)+d(9)+G(4),
+    9:  d(2)+'sss'+d(22)+'sss',
+    10: G(30), 11: G(30)
+  }),
+  seg('sleep', 26, {
+    8:  d(5)+'===='+d(8)+'====',
+    9:  d(10)+'z'+d(2)+'s'+d(1)+'z',
+    10: G(26), 11: G(26)
+  }),
+  seg('gap2', 22, {
+    7:  d(4)+'sss'+d(7)+'sss',
+    9:  d(10)+'R',
+    10: G(4)+d(3)+G(7)+d(3)+G(5), 11: G(4)+d(3)+G(7)+d(3)+G(5)
+  }),
+  seg('guard2', 26, {
+    5:  d(12)+'*',
+    9:  d(3)+'sss'+d(6)+'c'+d(7)+'sss',
+    10: G(26), 11: G(26)
+  }),
+  seg('ramprun', 26, {
+    7:  d(19)+'ssss',
+    8:  d(8)+'/'+G(3)+'\\',
+    9:  d(4)+'/'+G(8)+'\\',
+    10: G(19)+d(4)+G(3), 11: G(19)+d(4)+G(3)
+  }),
+  seg('arena', 30, {
+    4:  d(26)+'D', 5: d(26)+'D', 6: d(26)+'D',
+    7:  d(26)+'D', 8: d(26)+'D',
+    9:  d(14)+'B'+d(11)+'D',
+    10: G(30), 11: G(30)
+  }),
+  seg('finale', 22, {
+    0: d(20)+'##', 1: d(20)+'##', 2: d(20)+'##', 3: d(20)+'##',
+    4: d(20)+'##', 5: d(20)+'##', 6: d(20)+'##', 7: d(20)+'##',
+    8: d(20)+'##',
+    9: d(3)+'ssssss'+d(5)+'Z'+d(5)+'##',
+    10: G(22), 11: G(22)
+  })
+];
+
+// Tile-Codes
+const T_EMPTY=0, T_GROUND=1, T_ROCK=2, T_LOG=3, T_RAMP_UP=4, T_RAMP_DN=5, T_DOOR=6;
+const CHAR2TILE = { '#':T_GROUND, 'R':T_ROCK, '=':T_LOG, '/':T_RAMP_UP, '\\':T_RAMP_DN, 'D':T_DOOR };
+const isSolid = t => t===T_GROUND || t===T_ROCK || t===T_LOG || t===T_DOOR;
+
+let MAPW = 0, grid = [], vgrid = [], SEGOFF = {};
+let spawns = [];          // Gegner-Spawn-Beschreibungen
+let collectibles = [];    // Salat + Splitter (persistieren ueber Respawn)
+let cage = null, playerStart = {x:32,y:120};
+let checkpoint = null;    // {x, y, active, animT} – nur im Speicher
+let totalSalad = 0, totalShards = 0;
+
+const hash = n => { let h = (n*2654435761)>>>0; h ^= h>>13; return (h*2246822519)>>>0; };
+
+function buildLevel(){
+  MAPW = SEGS.reduce((a,s)=>a+s.w, 0);
+  grid = []; for(let r=0;r<MAPH;r++) grid.push(new Array(MAPW).fill(0));
+  spawns = []; collectibles = []; cage = null;
+  totalSalad = 0; totalShards = 0;
+  let off = 0; SEGOFF = {};
+  for(const s of SEGS){
+    SEGOFF[s.name] = off;
+    for(let r=0;r<MAPH;r++){
+      for(let i=0;i<s.w;i++){
+        const ch = s.rows[r][i], c = off+i;
+        const x = c*TILE, groundY = (r+1)*TILE; // Unterkante der Zelle
+        if(ch==='P'){ playerStart = {x:x, y:groundY - 19}; }
+        else if(ch==='s'){ collectibles.push({kind:'salad', x:x+5, y:r*TILE+5, w:7, h:7, got:false}); totalSalad++; }
+        else if(ch==='*'){ collectibles.push({kind:'shard', x:x+5, y:r*TILE+3, w:7, h:11, got:false}); totalShards++; }
+        else if(ch==='c'){ spawns.push({type:'guard', x:x+1, y:groundY-14}); }
+        else if(ch==='z'){ spawns.push({type:'sleeper', x:x+1, y:groundY-13}); }
+        else if(ch==='B'){ spawns.push({type:'boss', x:x-4, y:groundY-22, doorX:(off+26)*TILE}); }
+        else if(ch==='Z'){ cage = {x:x-3, y:groundY-30, w:22, h:30, open:false}; }
+        else if(CHAR2TILE[ch] !== undefined) grid[r][c] = CHAR2TILE[ch];
+      }
+    }
+    off += s.w;
+  }
+  // EIN Checkpoint (Fahnenmast) am Anfang des 'sleep'-Segments,
+  // wird bei komplettem Neustart (startRun -> buildLevel) zurueckgesetzt.
+  checkpoint = { x:(SEGOFF['sleep']+2)*TILE, y:10*TILE, active:false, animT:0 };
+  computeVGrid();
+}
+
+function tileAt(c, r){
+  if(c < 0 || c >= MAPW) return T_GROUND;   // Levelraender sind fest
+  if(r < 0 || r >= MAPH) return T_EMPTY;    // unten offen -> Sturz
+  return grid[r][c];
+}
+
+// Tutorial-Hinweise in der Welt (x in Tiles relativ zum Segment)
+let HINTS = [];
+function buildHints(){
+  const H = (segName, col, y, t) => HINTS.push({x:(SEGOFF[segName]+col)*TILE, y, t});
+  HINTS = [];
+  H('start',   5,  86, 'TIPPEN = PADDEL-SPRUNG');
+  H('logs',    4,  70, 'HALTEN = EINROLLEN');
+  H('ramp1',  10,  60, 'BERGAB ROLLEN = SPEED!');
+  H('sleep',   6,  66, 'PSST! LEISE VORBEIROLLEN');
+  H('guard2',  6,  60, 'TIPP BEIM AUFPRALL = HOHER BOUNCE');
+  H('arena',   4,  60, 'DIE WACHE! 3x DRAUFSPRINGEN');
+}
+
+// ============================================================
+// TEXTUR-ATLAS – alle Tiles werden EINMAL beim Start auf
+// Offscreen-Canvases vorgerendert (statt fillRects pro Frame)
+// ============================================================
+const ATLAS = [];   // { cv, ox, oy }
+const AT = { grass:[], dirt:[], rock:[], logM:[], logL:0, logR:0, rampUp:0, rampDn:0, doorT:0, doorM:0 };
+function mkcv(w, h){ const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function atile(w, h, ox, oy, paint){
+  const cv = mkcv(w, h), g = cv.getContext('2d');
+  paint(g);
+  ATLAS.push({cv, ox, oy});
+  return ATLAS.length - 1;
+}
+function fr(g, x, y, w, h, c){ g.fillStyle = c; g.fillRect(x, y, w, h); }
+
+const DIRT_BASE = [PAL.dirt, PAL.dirtMid, PAL.dirtDeep];
+const DIRT_DK   = [PAL.dirtMid, PAL.dirtDeep, PAL.dirtDeep2];
+
+// Erde: Schichten-Streifen, Steinchen, optional Wurzelfaden.
+// shade 0..2 = dunkler werdend nach unten.
+function paintDirt(g, ox, oy, shade, seed, root){
+  fr(g, ox, oy, 16, 16, DIRT_BASE[shade]);
+  for(let yy=2; yy<16; yy+=5){                       // horizontale Erdschichten
+    for(let i=0;i<16;i+=4)
+      if(hash(seed*3+yy*17+i)%3) fr(g, ox+i, oy+yy, 3, 1, DIRT_DK[shade]);
+  }
+  for(let k=0;k<4;k++){                              // Steinchen + Krumen
+    const h1 = hash(seed*5+k*31);
+    const sx = h1%13, sy = 2+(hash(seed*9+k*17)%12);
+    if(h1%3===0){ fr(g, ox+sx, oy+sy, 3, 2, PAL.pebble); fr(g, ox+sx, oy+sy, 1, 1, PAL.pebbleHi); }
+    else fr(g, ox+sx, oy+sy, 2, 1, DIRT_DK[shade]);
+  }
+  if(root){                                          // Wurzel schlaengelt sich
+    let rx = 3 + hash(seed*7)%9;
+    for(let yy=0; yy<16; yy+=2){
+      fr(g, ox+rx, oy+yy, 1, 2, PAL.logDark);
+      rx += (hash(seed*11+yy)%3)-1; rx = Math.max(1, Math.min(14, rx));
+    }
+  }
+}
+
+function bl(g, x, h, c){ fr(g, x, 6-h, 1, h, c); }   // einzelner Grashalm ueber der Kante
+
+// Gras-Oberkante: hellere Lip, ausgefranste Kante, Halme/Blumen-Varianten
+function paintGrass(g, v, seed){
+  const Y = 6;                                       // Tile-Ursprung (6px Ueberhang fuer Deko)
+  paintDirt(g, 0, Y, 0, seed, false);
+  fr(g, 0, Y, 16, 5, PAL.grass);
+  for(let i=0;i<16;i+=2) if(hash(seed+i)%3===0) fr(g, i, Y+5, 2, 1, PAL.grass);  // ausgefranst
+  fr(g, 0, Y+4, 16, 1, PAL.grassDk);                 // Schattenlinie
+  fr(g, 0, Y, 16, 2, PAL.grassLip);
+  for(let i=1;i<16;i+=3) if(hash(seed*3+i)%2===0) fr(g, i, Y+2, 1, 1, PAL.grassLip); // Zacken
+  if(v===1){ bl(g, 9, 2, PAL.grass); }
+  else if(v===2){ bl(g, 2, 3, PAL.grassLip); bl(g, 7, 4, PAL.grass); bl(g, 12, 3, PAL.grassLip); }
+  else if(v===3){ fr(g, 4, Y-4, 1, 4, PAL.grass); fr(g, 6, Y-5, 1, 5, PAL.grassLip);
+                  fr(g, 8, Y-4, 1, 4, PAL.grass); bl(g, 13, 3, PAL.grassLip); }
+  else if(v===4){ bl(g, 3, 3, PAL.grassLip); bl(g, 11, 4, PAL.grass); fr(g, 10, Y-5, 1, 1, PAL.sun); }
+  else if(v===5){ fr(g, 7, Y-4, 1, 4, PAL.grass); fr(g, 6, Y-7, 3, 3, PAL.flower);
+                  fr(g, 7, Y-6, 1, 1, PAL.sun); fr(g, 8, Y-2, 2, 1, PAL.grassLip); bl(g, 2, 3, PAL.grassLip); }
+}
+
+// Fels: Highlight oben links, Risse, Moosflecken
+function paintRock(g, v){
+  fr(g, 2, 4, 12, 12, PAL.rock);
+  fr(g, 4, 2, 8, 4, PAL.rock);
+  fr(g, 3, 12, 10, 4, PAL.rockDark);
+  fr(g, 12, 8, 2, 6, PAL.rockDark);
+  fr(g, 4, 3, 5, 2, PAL.rockHi);
+  fr(g, 3, 5, 2, 4, PAL.rockHi);
+  if(v===0){ fr(g, 8, 4, 1, 3, PAL.rockDark); fr(g, 9, 7, 1, 3, PAL.rockDark); fr(g, 8, 10, 1, 2, PAL.rockDark); }
+  else     { fr(g, 6, 6, 1, 4, PAL.rockDark); fr(g, 7, 10, 1, 2, PAL.rockDark); fr(g, 11, 3, 1, 3, PAL.rockDark); }
+  fr(g, v?2:10, 13, 3, 2, PAL.moss);
+  fr(g, v?3:11, 12, 2, 1, PAL.moss);
+  fr(g, v?5:9, 14, 2, 2, PAL.mossDk);
+}
+
+// Baumstamm: Rindenkerben (vertikal), Jahresringe an den Enden
+function paintLog(g, kind, seed){ // kind 0=Mitte, 1=linkes Ende, 2=rechtes Ende
+  fr(g, 0, 3, 16, 10, PAL.log);
+  fr(g, 0, 3, 16, 2, PAL.logRing);
+  fr(g, 0, 11, 16, 2, PAL.logDark);
+  for(let i=1;i<15;i+=3){                            // Rindenkerben
+    const o = hash(seed+i)%3;
+    fr(g, i+(o===2?1:0), 5+o, 1, 4, PAL.logDark);
+  }
+  fr(g, 2, 6, 3, 1, PAL.logRing); fr(g, 9, 8, 3, 1, PAL.logRing);  // Lichtkanten
+  if(kind===1){                                      // Jahresringe (Stirnseite links)
+    fr(g, 0, 3, 5, 10, PAL.logRing);
+    fr(g, 1, 4, 3, 8, PAL.log);
+    fr(g, 1, 6, 2, 4, PAL.logRing);
+    fr(g, 2, 7, 1, 2, PAL.logDark);
+  } else if(kind===2){                               // Jahresringe rechts
+    fr(g, 11, 3, 5, 10, PAL.logRing);
+    fr(g, 12, 4, 3, 8, PAL.log);
+    fr(g, 13, 6, 2, 4, PAL.logRing);
+    fr(g, 13, 7, 1, 2, PAL.logDark);
+  }
+}
+
+// Rampe: Erdtextur + Grasnarbe entlang der Schraege
+function paintRamp(g, up){
+  const Y = 4, seed = up?77:88;
+  for(let i=0;i<16;i++){
+    const top = up ? Y+15-i : Y+i;
+    fr(g, i, top, 1, Y+16-top, PAL.dirt);
+  }
+  for(let k=0;k<6;k++){                              // Erdkrumen im Dreieck
+    const i = 2+(hash(seed+k*13)%12);
+    const surf = up ? Y+15-i : Y+i;
+    const room = Y+15-surf-3;
+    if(room > 0){
+      const yy = surf + 3 + (hash(seed*3+k*7)%room);
+      fr(g, i, yy, 2, 1, PAL.dirtMid);
+    }
+  }
+  fr(g, up?12:2, Y+13, 3, 2, PAL.pebble); fr(g, up?12:2, Y+13, 1, 1, PAL.pebbleHi);
+  for(let i=0;i<16;i++){                             // Grasnarbe + Halme
+    const top = up ? Y+15-i : Y+i;
+    fr(g, i, top, 1, 2, PAL.grassLip);
+    fr(g, i, top+2, 1, 2, PAL.grass);
+    if(hash(seed*7+i)%4===0) fr(g, i, top-2, 1, 2, PAL.grassLip);
+  }
+}
+
+// Tor: Holzplanken + Metallbaender mit Nieten
+function paintDoor(g, top){
+  fr(g, 2, 0, 12, 16, PAL.door);
+  fr(g, 4, 0, 2, 16, PAL.doorBar); fr(g, 9, 0, 2, 16, PAL.doorBar);
+  fr(g, 3, 0, 1, 16, PAL.doorSeam); fr(g, 8, 0, 1, 16, PAL.doorSeam); fr(g, 13, 0, 1, 16, PAL.doorSeam);
+  const bys = top ? [12] : [2, 10];
+  for(const by of bys){
+    fr(g, 2, by, 12, 3, PAL.rockDark);
+    fr(g, 2, by, 12, 1, PAL.rock);
+    fr(g, 3, by+1, 1, 1, PAL.gold); fr(g, 7, by+1, 1, 1, PAL.gold); fr(g, 12, by+1, 1, 1, PAL.gold);
+  }
+  if(top){
+    fr(g, 2, 0, 12, 3, PAL.doorDark);                // Sturz
+    fr(g, 2, 3, 12, 1, PAL.doorBar);
+  }
+}
+
+function makeAtlas(){
+  for(let v=0;v<6;v++) AT.grass.push(atile(16, 22, 0, -6, g=>paintGrass(g, v, 101+v*37)));
+  for(let sh=0;sh<3;sh++) for(let v=0;v<3;v++)
+    AT.dirt.push(atile(16, 16, 0, 0, g=>paintDirt(g, 0, 0, sh, 211+sh*53+v*17, v===2)));
+  for(let v=0;v<2;v++) AT.rock.push(atile(16, 16, 0, 0, g=>paintRock(g, v)));
+  for(let v=0;v<2;v++) AT.logM.push(atile(16, 16, 0, 0, g=>paintLog(g, 0, 401+v*29)));
+  AT.logL = atile(16, 16, 0, 0, g=>paintLog(g, 1, 431));
+  AT.logR = atile(16, 16, 0, 0, g=>paintLog(g, 2, 457));
+  AT.rampUp = atile(16, 20, 0, -4, g=>paintRamp(g, true));
+  AT.rampDn = atile(16, 20, 0, -4, g=>paintRamp(g, false));
+  AT.doorT = atile(16, 16, 0, 0, g=>paintDoor(g, true));
+  AT.doorM = atile(16, 16, 0, 0, g=>paintDoor(g, false));
+}
+
+// Variantengitter: pro Zelle EINMAL beim Levelbau die Atlas-Kachel
+// deterministisch (hash-basiert) auswaehlen.
+function computeVGrid(){
+  vgrid = [];
+  for(let r=0;r<MAPH;r++){
+    const row = new Int16Array(MAPW).fill(-1);
+    for(let c=0;c<MAPW;c++){
+      const t = grid[r][c];
+      if(t===T_GROUND){
+        if(tileAt(c, r-1)===T_EMPTY){
+          const h2 = hash(c*13)%10;   // gleiche Verteilung wie im Prototyp
+          row[c] = AT.grass[ h2<3 ? 2+h2 : (h2===4 ? 5 : hash(c*7)%2) ];
+        } else {
+          let n = 0, rr = r-1;
+          while(rr>=0 && grid[rr][c]===T_GROUND){ n++; rr--; }
+          const sh = n<=1 ? 0 : (n<=3 ? 1 : 2);      // dunkler nach unten
+          row[c] = AT.dirt[sh*3 + hash(c*29+r*11)%3];
+        }
+      }
+      else if(t===T_ROCK) row[c] = AT.rock[hash(c*17+r*5)%2];
+      else if(t===T_LOG){
+        const L = tileAt(c-1, r)===T_LOG, R = tileAt(c+1, r)===T_LOG;
+        row[c] = !L ? AT.logL : (!R ? AT.logR : AT.logM[hash(c*5)%2]);
+      }
+      else if(t===T_RAMP_UP) row[c] = AT.rampUp;
+      else if(t===T_RAMP_DN) row[c] = AT.rampDn;
+      else if(t===T_DOOR) row[c] = tileAt(c, r-1)===T_DOOR ? AT.doorM : AT.doorT;
+    }
+    vgrid.push(row);
+  }
+}
+
+// ============================================================
+// HINTERGRUND – 3 Parallax-Ebenen, einmalig als kachelbare
+// Streifen vorgerendert (Sinus-Perioden teilen 480 -> nahtlos)
+// ============================================================
+const BG = { sun:null, clouds:[], far:null, near:null };
+const BGW = 480;
+function hillY(w, baseY, amp){
+  return baseY - amp*(0.5+0.5*Math.sin(w*0.01308997)) - 8*Math.sin(w*0.03926991);
+}
+function paintTreeFar(g, x, y, v){
+  if(v===0){ // Nadelbaum
+    fr(g, x-2, y-4, 5, 2, PAL.treeFarDk);
+    fr(g, x-1, y-6, 3, 2, PAL.treeFar);
+    fr(g, x, y-8, 1, 2, PAL.treeFar);
+    fr(g, x, y-2, 1, 2, PAL.treeFarDk);
+  } else {   // Laubbaum
+    fr(g, x-2, y-6, 5, 4, PAL.treeFar);
+    fr(g, x-1, y-7, 3, 1, PAL.treeFar);
+    fr(g, x-2, y-3, 5, 1, PAL.treeFarDk);
+    fr(g, x, y-2, 1, 2, PAL.treeFarDk);
+  }
+}
+function paintBush(g, x, y, v){
+  fr(g, x-3, y-3, 7, 3, PAL.bush);
+  fr(g, x-2, y-4, 5, 1, PAL.bush);
+  fr(g, x-2, y-4, 3, 1, PAL.bushHi);
+  fr(g, x-3, y-1, 7, 1, PAL.bushDk);
+  if(v) fr(g, x-1, y-5, 1, 1, PAL.flower);
+}
+function buildBG(){
+  // Sonne mit dezentem Strahlenkranz
+  BG.sun = mkcv(40, 40); const s = BG.sun.getContext('2d');
+  for(let k=0;k<8;k++){
+    const a = k*Math.PI/4;
+    fr(s, 19+Math.round(Math.cos(a)*16)-1, 19+Math.round(Math.sin(a)*16)-1, 2, 2, PAL.sunRay);
+    fr(s, 19+Math.round(Math.cos(a+0.39)*18)-1, 19+Math.round(Math.sin(a+0.39)*18)-1, 1, 1, PAL.sunRay);
+  }
+  s.fillStyle = PAL.sun; s.beginPath(); s.arc(19, 19, 13, 0, 7); s.fill();
+  fr(s, 13, 13, 12, 12, PAL.sun);
+  fr(s, 14, 14, 6, 4, PAL.sunHi); fr(s, 15, 19, 3, 2, PAL.sunHi);
+
+  // Wolken: 3 Pixel-Formen
+  for(let v=0;v<3;v++){
+    const cv = mkcv(34, 13), g = cv.getContext('2d');
+    if(v===0){ fr(g,2,6,28,5,'#fff'); fr(g,8,2,15,5,'#fff'); fr(g,4,4,7,4,'#fff'); fr(g,4,9,24,2,PAL.cloudShade); }
+    else if(v===1){ fr(g,0,7,34,4,'#fff'); fr(g,5,4,13,4,'#fff'); fr(g,21,5,9,3,'#fff'); fr(g,2,9,30,2,PAL.cloudShade); }
+    else { fr(g,4,7,25,4,'#fff'); fr(g,6,3,9,5,'#fff'); fr(g,16,2,10,6,'#fff'); fr(g,6,9,21,2,PAL.cloudShade); }
+    BG.clouds.push(cv);
+  }
+
+  // Ferne Huegelkette (hell) mit Waeldchen
+  BG.far = mkcv(BGW, VH); const f = BG.far.getContext('2d');
+  for(let x=0;x<BGW;x++){
+    const y = Math.round(hillY(x, 118, 34));
+    fr(f, x, y, 1, VH-y, PAL.hillFar);
+    fr(f, x, y, 1, 2, PAL.hillFarHi);
+  }
+  for(let k=0;k<11;k++){
+    const tx = 10+(k*43+hash(k*7)%20);
+    if(tx > BGW-14) break;
+    const ty = Math.round(hillY(tx, 118, 34));
+    paintTreeFar(f, tx, ty, hash(k*13)%2);
+    if(hash(k*3)%2) paintTreeFar(f, tx+6, Math.round(hillY(tx+6, 118, 34)), hash(k*17)%2);
+  }
+
+  // Nahe Huegel mit Bueschen und Bluemchen
+  BG.near = mkcv(BGW, VH); const n = BG.near.getContext('2d');
+  for(let x=0;x<BGW;x++){
+    const y = Math.round(hillY(x+137, 136, 26));   // Phase versetzt (tilet weiterhin)
+    fr(n, x, y, 1, VH-y, PAL.hillNear);
+    fr(n, x, y, 1, 2, PAL.hillNearHi);
+  }
+  for(let k=0;k<9;k++){
+    const bx = 14+(k*52+hash(k*23)%26);
+    if(bx > BGW-10) break;
+    paintBush(n, bx, Math.round(hillY(bx+137, 136, 26)), hash(k*29)%2);
+  }
+  for(let k=0;k<12;k++){
+    const fx = 6+(k*39+hash(k*41)%22);
+    if(fx > BGW-4) break;
+    const fy = Math.round(hillY(fx+137, 136, 26)) + 3 + (hash(k)%6);
+    fr(n, fx, fy, 1, 2, PAL.grassDk);
+    fr(n, fx, fy-1, 1, 1, hash(k*5)%2 ? PAL.flower : PAL.sun);
+  }
+}
+
+// ============================================================
+// STATE
+// ============================================================
+let state = 'title';   // title | intro | play | pause | rescue | gameover | win
+let stateT = 0;        // Zeit im aktuellen State
+let gt = 0;            // globale Zeit
+let playT = 0;         // Spielzeit des Laufs
+let hearts = 3, saladCount = 0, shardCount = 0;
+let bossDead = false;
+let enemies = [], particles = [];
+let cam = {x:0, y:MAPH*TILE - VH, shake:0};
+let zip = null;        // Zip-Animation bei Rettung
+let flashT = 0;        // Screen-Flash beim Splitter
+
+const P = {
+  x:0, y:0, w:13, h:19, vx:0, vy:0,
+  grounded:false, lastGroundT:-9, rolling:false, rollA:0,
+  invulnT:0, paddleT:-9, dead:false
+};
+
+// Physik-Konstanten
+const GRAV = 850, JUMP_V = -292, BASE_SPD = 80, MAX_SPD = 205;
+const PADDLE_BOOST = 55, COYOTE = 0.1, JBUF = 0.13;
+
+// Vibration (Mobile) – nur wenn verfuegbar
+const SHARD_VIB = [12, 30, 12];
+function vib(p){ if(navigator.vibrate) navigator.vibrate(p); }
+
+function resetEnemies(){
+  enemies = [];
+  for(const s of spawns){
+    if(s.type === 'boss' && bossDead) continue;
+    if(s.type === 'guard')
+      enemies.push({type:'guard', x:s.x, y:s.y, w:14, h:14, x0:s.x, dir:1, spd:28, alive:true, t:Math.random()*6});
+    else if(s.type === 'sleeper')
+      enemies.push({type:'sleeper', x:s.x, y:s.y, w:14, h:13, alive:true, awake:false, t:Math.random()*6});
+    else if(s.type === 'boss')
+      enemies.push({type:'boss', x:s.x, y:s.y, w:22, h:22, x0:s.x, doorX:s.doorX, dir:1, spd:52,
+                    hp:3, alive:true, stunT:0, flashT:0, t:0});
+  }
+}
+
+function openDoor(){
+  for(let r=0;r<MAPH;r++) for(let c=0;c<MAPW;c++)
+    if(grid[r][c] === T_DOOR){ grid[r][c] = 0; vgrid[r][c] = -1; puff(c*TILE+8, r*TILE+8, PAL.doorBar, 3); }
+  computeVGrid(); // Bodenkacheln unter dem entfernten Tor neu klassifizieren (Gras statt Dirt)
+  cam.shake = Math.max(cam.shake, 3);
+}
+
+function respawnPlayer(){
+  const sp = (checkpoint && checkpoint.active)
+    ? {x:checkpoint.x - 2, y:checkpoint.y - 19}
+    : playerStart;
+  P.x = sp.x; P.y = sp.y;
+  P.vx = BASE_SPD; P.vy = 0; P.rolling = false; P.h = 19;
+  P.grounded = false; P.invulnT = 1.2;
+  cam.x = Math.max(0, P.x - 100);
+  resetEnemies();
+}
+
+function startRun(){          // kompletter Neustart des Levels (Checkpoint resettet)
+  buildLevel(); buildHints();
+  hearts = 3; saladCount = 0; shardCount = 0; bossDead = false;
+  particles = []; playT = 0; zip = null; flashT = 0;
+  respawnPlayer(); P.invulnT = 0;
+  state = 'play'; stateT = 0;
+}
+
+// ============================================================
+// INPUT  (Touch: Tippen = Sprung, Halten = Rollen | Tastatur: Space / Runter)
+// ============================================================
+let jumpBufT = -9, lastTapT = -9, pointerHeld = false, holdT = 0, keyRoll = false;
+
+function tap(){
+  if(state === 'play'){ jumpBufT = gt; lastTapT = gt; }
+  else if(state === 'pause'){ if(stateT > 0.15){ state = 'play'; stateT = 0; holdT = -9; } } // Resume-Tap darf kein Rollen ausloesen
+  else menuAdvance();
+}
+function menuAdvance(){
+  if(stateT < 0.5) return; // Doppel-Tipp-Schutz
+  if(state === 'title'){ state = 'intro'; stateT = 0; }
+  else if(state === 'intro'){ startRun(); }
+  else if(state === 'gameover'){ startRun(); }
+  else if(state === 'win'){ state = 'title'; stateT = 0; }
+}
+
+addEventListener('keydown', e => {
+  if(e.repeat) return;
+  if(e.code==='Space' || e.code==='ArrowUp' || e.code==='KeyW'){ tap(); e.preventDefault(); }
+  if(e.code==='ArrowDown' || e.code==='KeyS'){ keyRoll = true; e.preventDefault(); }
+});
+addEventListener('keyup', e => {
+  if(e.code==='ArrowDown' || e.code==='KeyS') keyRoll = false;
+});
+const activePointers = new Set();
+addEventListener('pointerdown', e => {
+  e.preventDefault();
+  activePointers.add(e.pointerId);
+  pointerHeld = true;
+  if(activePointers.size === 1){ holdT = 0; tap(); } // nur der erste Finger zaehlt als Tap/Hold
+});
+addEventListener('pointerup',   e => { activePointers.delete(e.pointerId); pointerHeld = activePointers.size > 0; });
+addEventListener('pointercancel',e => { activePointers.delete(e.pointerId); pointerHeld = activePointers.size > 0; });
+addEventListener('touchmove', e => e.preventDefault(), {passive:false});
+addEventListener('contextmenu', e => e.preventDefault());
+
+// App in den Hintergrund -> Pause (nur waehrend des Spielens)
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden && state === 'play'){
+    state = 'pause'; stateT = 0;
+    pointerHeld = false; keyRoll = false; activePointers.clear();
+  }
+});
+// Fokusverlust: gehaltene Eingaben loslassen (keyup/pointerup kommen sonst nie an)
+addEventListener('blur', () => { pointerHeld = false; keyRoll = false; activePointers.clear(); });
+
+// ============================================================
+// UPDATE
+// ============================================================
+function hurt(knock){
+  if(P.invulnT > 0) return;
+  hearts--;
+  vib(30);
+  cam.shake = Math.max(cam.shake, 3);
+  puff(P.x+7, P.y+8, PAL.heart, 6);
+  if(hearts <= 0){ state = 'gameover'; stateT = 0; return; }
+  P.invulnT = 1.4;
+  if(knock){ P.vy = -160; P.vx = BASE_SPD*0.4; }
+}
+
+function fallDeath(){
+  hearts--;
+  vib(30);
+  if(hearts <= 0){ state = 'gameover'; stateT = 0; return; }
+  respawnPlayer();   // respawnt am Checkpoint, falls aktiviert
+}
+
+function overlap(a, b){
+  return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+}
+
+function headroomFree(){ // Platz zum Aufstehen?
+  const standH = 19, top = P.y + P.h - standH;
+  const r = Math.floor(top/TILE);
+  for(let c = Math.floor((P.x+1)/TILE); c <= Math.floor((P.x+P.w-1)/TILE); c++)
+    if(isSolid(tileAt(c, r))) return false;
+  return true;
+}
+
+function updatePlayer(dt){
+  const wantRoll = keyRoll || (pointerHeld && holdT > 0.13);
+
+  // --- Rollen an/aus ---
+  if(wantRoll && !P.rolling){
+    P.rolling = true;
+    P.y += P.h - 11; P.h = 11; // Hitbox schrumpft (Fuesse bleiben)
+  } else if(!wantRoll && P.rolling && headroomFree()){
+    P.y -= 19 - P.h; P.h = 19;
+    P.rolling = false;
+  }
+
+  // --- Auto-Run + Momentum (leicht rutschig) ---
+  const onDown = onRampType(T_RAMP_DN), onUp = onRampType(T_RAMP_UP);
+  if(P.rolling && P.grounded && onDown){
+    P.vx = Math.min(MAX_SPD, P.vx + 300*dt); // Panzer-Roll bergab = Boost
+  } else if(P.vx < BASE_SPD){
+    P.vx = Math.min(BASE_SPD, P.vx + 170*dt);
+  } else {
+    P.vx = Math.max(BASE_SPD, P.vx - (P.rolling?38:58)*dt); // Boost klingt langsam ab
+  }
+  if(P.grounded && onUp && !P.rolling) P.vx = Math.max(BASE_SPD*0.85, P.vx - 90*dt);
+
+  // --- Sprung (Buffer + Coyote), Paddel-Push ---
+  const canJump = P.grounded || (gt - P.lastGroundT < COYOTE && P.vy >= 0);
+  if(gt - jumpBufT < JBUF && canJump){
+    let ok = true;
+    if(P.rolling){
+      if(headroomFree()){ P.y -= 19 - P.h; P.h = 19; P.rolling = false; }
+      else ok = false; // unter Baumstamm: kein Sprung
+    }
+    if(ok){
+      P.vy = JUMP_V;
+      P.vx = Math.min(MAX_SPD, P.vx + PADDLE_BOOST);
+      P.paddleT = gt;
+      P.grounded = false; jumpBufT = -9;
+      puff(P.x+4, P.y+P.h, '#ffffff', 3);
+    }
+  }
+
+  // --- Gravitation (eingerollt in der Luft: schneller fallen) ---
+  const g = (P.rolling && !P.grounded) ? GRAV*1.55 : GRAV;
+  P.vy = Math.min(P.rolling?460:400, P.vy + g*dt);
+  const fallV = P.vy;          // fuer Lande-Staub
+
+  const wasGrounded = P.grounded;
+  P.grounded = false;
+
+  // --- X bewegen + Kollision ---
+  // Fuss-Marge = Step-Assist: kleine Stufen (Rampen-Uebergaenge) blockieren nicht,
+  // volle Tiles (Steine, Waende) schon.
+  P.x += P.vx*dt;
+  {
+    const top = P.y+1, bot = P.y+P.h-(P.rolling?6:10);
+    const c = Math.floor((P.x+P.w)/TILE);
+    for(let r = Math.floor(top/TILE); r <= Math.floor(bot/TILE); r++){
+      const t = tileAt(c, r);
+      if(isSolid(t)){ P.x = c*TILE - P.w - 0.01; break; }
+    }
+  }
+
+  // --- Y bewegen + Kollision ---
+  P.y += P.vy*dt;
+  if(P.vy >= 0){
+    const r = Math.floor((P.y+P.h)/TILE);
+    for(let c = Math.floor((P.x+1)/TILE); c <= Math.floor((P.x+P.w-1)/TILE); c++){
+      if(isSolid(tileAt(c, r))){
+        P.y = r*TILE - P.h; P.vy = 0; P.grounded = true; break;
+      }
+    }
+  } else {
+    const r = Math.floor(P.y/TILE);
+    for(let c = Math.floor((P.x+1)/TILE); c <= Math.floor((P.x+P.w-1)/TILE); c++){
+      if(isSolid(tileAt(c, r))){ P.y = (r+1)*TILE + 0.01; P.vy = 0; break; }
+    }
+  }
+
+  // --- Rampen (45 Grad): Boden unter Spielermitte samplen ---
+  {
+    const cx = P.x + P.w/2, c = Math.floor(cx/TILE);
+    for(let r = 0; r < MAPH; r++){
+      const t = tileAt(c, r);
+      if(t !== T_RAMP_UP && t !== T_RAMP_DN) continue;
+      const f = (cx - c*TILE)/TILE;
+      const surf = t===T_RAMP_UP ? (r+1)*TILE - f*TILE : r*TILE + f*TILE;
+      const stick = wasGrounded ? 10 : 2;
+      if(P.vy >= 0 && P.y+P.h >= surf - stick){
+        P.y = surf - P.h; P.vy = 0; P.grounded = true;
+      }
+      break;
+    }
+  }
+
+  if(P.grounded) P.lastGroundT = gt;
+  if(P.rolling) P.rollA += P.vx*dt/6;
+  P.invulnT = Math.max(0, P.invulnT - dt);
+
+  // --- Lande-Staub (Juice, rein kosmetisch) ---
+  if(P.grounded && !wasGrounded && fallV > 170){
+    dust(P.x + P.w/2, P.y + P.h);
+    if(fallV > 330) cam.shake = Math.max(cam.shake, 1.5);
+  }
+
+  // --- Sturz in Luecke ---
+  if(P.y > MAPH*TILE + 30){ fallDeath(); return; }
+
+  // --- Checkpoint beruehren ---
+  if(checkpoint && !checkpoint.active &&
+     P.x + P.w > checkpoint.x && P.x < checkpoint.x + 12 &&
+     P.y + P.h > checkpoint.y - 28){
+    checkpoint.active = true; checkpoint.animT = 0;
+    sparkle(checkpoint.x + 6, checkpoint.y - 20, PAL.bow);
+    puff(checkpoint.x + 6, checkpoint.y - 4, PAL.grassLip, 4);
+    vib(20);
+  }
+
+  // --- Collectibles ---
+  for(const it of collectibles){
+    if(it.got) continue;
+    if(overlap(P, it)){
+      it.got = true;
+      if(it.kind === 'salad'){ saladCount++; sparkle(it.x+3, it.y+3, PAL.salad); }
+      else {
+        shardCount++; sparkle(it.x+3, it.y+5, PAL.shard);
+        cam.shake = Math.max(cam.shake, 2);
+        flashT = 0.16; vib(SHARD_VIB);
+      }
+    }
+  }
+
+  // --- Kaefig / Level-Ende ---
+  if(cage && !cage.open && overlap(P, cage)){
+    cage.open = true;
+    state = 'rescue'; stateT = 0;
+    zip = {x:cage.x+8, y:cage.y+18, vy:0, hop:0};
+    P.vx = 0;
+    sparkle(cage.x+11, cage.y+10, PAL.shard);
+  }
+}
+
+function onRampType(type){
+  const cx = P.x + P.w/2, c = Math.floor(cx/TILE);
+  for(let r = 0; r < MAPH; r++){
+    const t = tileAt(c, r);
+    if(t === T_RAMP_UP || t === T_RAMP_DN) return t === type;
+  }
+  return false;
+}
+
+function killEnemy(e){
+  e.alive = false;
+  puff(e.x+e.w/2, e.y+e.h/2, PAL.crowWing, 7);
+  puff(e.x+e.w/2, e.y+e.h/2, PAL.crow, 4);
+}
+
+function updateEnemies(dt){
+  for(const e of enemies){
+    if(!e.alive) continue;
+    e.t += dt;
+    if(e.type === 'guard'){
+      e.x += e.dir*e.spd*dt;
+      if(e.x > e.x0+44){ e.x = e.x0+44; e.dir = -1; }
+      if(e.x < e.x0-44){ e.x = e.x0-44; e.dir = 1; }
+    } else if(e.type === 'boss'){
+      e.flashT = Math.max(0, e.flashT-dt);
+      if(e.stunT > 0){ e.stunT -= dt; }
+      else {
+        // verfolgt Shelly innerhalb der Arena
+        const tgt = P.x + P.w/2 - e.w/2;
+        e.dir = tgt > e.x+2 ? 1 : (tgt < e.x-2 ? -1 : e.dir);
+        e.x += e.dir*e.spd*dt;
+        e.x = Math.max(e.x0-90, Math.min(e.doorX - e.w - 4, e.x));
+      }
+    }
+
+    if(!overlap(P, e)) continue;
+
+    if(e.type === 'sleeper'){
+      if(P.rolling || P.invulnT > 0) continue; // leise vorbeirollen
+      e.awake = true;
+      hurt(true);
+      continue;
+    }
+    if(P.rolling && e.type === 'guard'){ killEnemy(e); continue; } // Panzer-Roll zerschmettert
+
+    const stomp = P.vy > 40 && (P.y + P.h) < e.y + e.h*0.65;
+    if(stomp && !P.rolling){
+      const high = (gt - lastTapT) < 0.16; // Shell-Bounce: Tipp beim Aufprall
+      if(e.type === 'boss'){
+        e.hp--; e.flashT = 0.25; e.stunT = 0.6;
+        vib(15);
+        cam.shake = Math.max(cam.shake, 3);
+        puff(e.x+e.w/2, e.y, '#fff', 4);
+        if(e.hp <= 0){ killEnemy(e); bossDead = true; openDoor(); }
+      } else killEnemy(e);
+      P.vy = high ? -338 : -200;
+      if(high) sparkle(P.x+6, P.y+P.h, PAL.shard);
+      jumpBufT = -9;
+    } else if(e.type === 'boss' && P.rolling){
+      P.vx = -40; P.vy = -140; // Boss blockt den Roll, prallt ab
+    } else {
+      hurt(true);
+    }
+  }
+}
+
+// ---- Partikel ----
+function puff(x, y, col, n){
+  for(let i=0;i<n;i++) particles.push({
+    x, y, vx:(Math.random()-0.5)*90, vy:(Math.random()-0.7)*90,
+    life:0.35+Math.random()*0.3, col, s:2+Math.random()*2
+  });
+}
+function sparkle(x, y, col){
+  for(let i=0;i<6;i++){
+    const a = i/6*Math.PI*2;
+    particles.push({x, y, vx:Math.cos(a)*55, vy:Math.sin(a)*55-25, life:0.4, col, s:2});
+  }
+}
+function dust(x, y){   // Staub beim Landen
+  for(let i=0;i<5;i++) particles.push({
+    x: x+(Math.random()-0.5)*10, y: y-1,
+    vx: (Math.random()-0.5)*70, vy: -Math.random()*45,
+    life: 0.25+Math.random()*0.2, col: i%2 ? PAL.dust1 : PAL.dust2, s:2
+  });
+}
+function updateParticles(dt){
+  for(const p of particles){ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=300*dt; }
+  particles = particles.filter(p => p.life > 0);
+}
+
+function update(dt){
+  stateT += dt;
+  if(pointerHeld) holdT += dt;
+  flashT = Math.max(0, flashT - dt);
+  cam.shake = Math.max(0, cam.shake - 14*dt); // Shake in jedem State abbauen (sonst zittert Gameover/Pause dauerhaft)
+
+  if(state === 'play'){
+    playT += dt;
+    updatePlayer(dt);
+    if(state !== 'play') { updateParticles(dt); return; } // Tod diese Frame
+    updateEnemies(dt);
+    updateParticles(dt);
+    if(checkpoint && checkpoint.active && checkpoint.animT < 2) checkpoint.animT += dt;
+    // Kamera
+    const target = Math.max(0, Math.min(P.x - 100, MAPW*TILE - VW));
+    cam.x += (target - cam.x)*Math.min(1, 12*dt);
+  } else if(state === 'pause'){
+    // eingefroren – nur auf Tipp warten
+  } else if(state === 'rescue'){
+    updateParticles(dt);
+    if(zip){
+      zip.hop += dt*7;
+      if(stateT > 0.4) zip.x += 18*dt; // Zip huepft raus
+      if(stateT > 0.3 && Math.random() < 0.15)
+        sparkle(cage.x+Math.random()*24, cage.y+Math.random()*24, PAL.shard);
+    }
+    if(stateT > 1.6){ state = 'win'; stateT = 0; }
+  } else {
+    updateParticles(dt);
+  }
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function px(x, y, w, h, c){ ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+function txt(s, x, y, c, size, align){
+  ctx.font = 'bold ' + (size||8) + 'px monospace';
+  ctx.textAlign = align || 'left'; ctx.textBaseline = 'top';
+  ctx.fillStyle = PAL.txtShadow; ctx.fillText(s, Math.round(x)+1, Math.round(y)+1);
+  ctx.fillStyle = c || PAL.txt;  ctx.fillText(s, Math.round(x), Math.round(y));
+}
+
+const clouds = [];
+for(let i=0;i<9;i++){
+  const s = 0.7+((hash(i+9)%10)/10);
+  clouds.push({x: i*190 + hash(i)%130, y: 10+(hash(i+50)%40), s, v: hash(i+3)%3,
+               w: Math.round(34*s), h: Math.round(13*s)});
+}
+
+function drawSky(){
+  px(0, 0, VW, VH, PAL.sky1);
+  px(0, 0, VW, 50, PAL.sky2);
+  px(0, 50, VW, 8, PAL.sky3);
+  // Sonne mit Strahlenkranz (vorgerendert)
+  ctx.drawImage(BG.sun, 253, 11);
+  // Wolken (Parallax 0.15, 3 Formen)
+  for(const cl of clouds){
+    const cx = ((cl.x - cam.x*0.15 + gt*3) % 1700 + 1700) % 1700 - 60;
+    if(cx < -cl.w || cx > VW+40) continue;
+    ctx.drawImage(BG.clouds[cl.v], Math.round(cx), cl.y, cl.w, cl.h);
+  }
+  // Huegel-Parallax: 2 vorgerenderte, nahtlos kachelnde Streifen
+  let off = (cam.x*0.35) % BGW; if(off < 0) off += BGW;
+  off = Math.round(off);
+  ctx.drawImage(BG.far, -off, 0);
+  ctx.drawImage(BG.far, BGW-off, 0);
+  off = (cam.x*0.6) % BGW; if(off < 0) off += BGW;
+  off = Math.round(off);
+  ctx.drawImage(BG.near, -off, 0);
+  ctx.drawImage(BG.near, BGW-off, 0);
+}
+
+function drawTiles(){
+  const c0 = Math.max(0, Math.floor(cam.x/TILE)), c1 = Math.min(MAPW-1, Math.ceil((cam.x+VW)/TILE));
+  const camX = Math.round(cam.x), camY = Math.round(cam.y);
+  for(let c=c0; c<=c1; c++){
+    const colX = c*TILE - camX;
+    for(let r=0; r<MAPH; r++){
+      const v = vgrid[r][c];
+      if(v < 0) continue;
+      const a = ATLAS[v];
+      ctx.drawImage(a.cv, colX + a.ox, r*TILE - camY + a.oy);
+    }
+  }
+}
+
+function drawCheckpoint(){
+  if(!checkpoint) return;
+  const x = Math.round(checkpoint.x - cam.x), gy = Math.round(checkpoint.y - cam.y);
+  if(x < -24 || x > VW+24) return;
+  const H = 26, act = checkpoint.active;
+  // Mast + Sockel + Knauf
+  px(x+4, gy-2, 6, 2, PAL.rockDark);
+  px(x+6, gy-H, 2, H-1, PAL.rock);
+  px(x+6, gy-H, 1, H-1, PAL.rockHi);
+  px(x+5, gy-H-2, 4, 2, act ? PAL.gold : PAL.rockDark);
+  if(act) px(x+5, gy-H-2, 1, 1, PAL.goldHi);
+  // Flagge: hisst sich beim Aktivieren hoch
+  const a = act ? Math.min(1, checkpoint.animT/0.6) : 0;
+  const fy = gy - 9 - a*(H-12);
+  const wob = act ? Math.round(Math.sin(gt*6)) : 0;
+  const c1 = act ? PAL.bow : PAL.rock, c2 = act ? PAL.bowDark : PAL.rockDark;
+  px(x+8, fy, 7, 5, c1);
+  px(x+8, fy, 7, 1, act ? PAL.bowHi : PAL.rockHi);
+  px(x+13+wob, fy+1, 2, 3, c1);
+  px(x+8, fy+4, 7, 1, c2);
+  if(act && checkpoint.animT < 1.2) txt('CHECKPOINT!', x+7, gy-H-14, '#fff', 7, 'center');
+}
+
+function drawCollectibles(){
+  for(const it of collectibles){
+    if(it.got) continue;
+    const x = it.x - cam.x, y = it.y - cam.y + Math.sin(gt*4 + it.x*0.05)*1.5;
+    if(x < -12 || x > VW+12) continue;
+    if(it.kind === 'salad'){
+      px(x, y+1, 7, 5, PAL.salad);
+      px(x+1, y, 5, 2, PAL.salad);
+      px(x+1, y+1, 2, 1, PAL.saladHi);           // Blattglanz
+      px(x+3, y+1, 1, 5, PAL.saladDark);         // Mittelader
+      px(x+1, y+3, 2, 1, PAL.saladDark);         // Seitenadern
+      px(x+5, y+2, 1, 1, PAL.saladDark);
+      px(x+4, y+4, 1, 1, PAL.saladDark);
+      // leichtes Funkeln (deterministisch)
+      if(((gt*2 + it.x*0.31) % 4) < 0.3) px(x+1+((it.x>>3)%4), y, 1, 1, '#ffffff');
+    } else {
+      // Sanduhr-Splitter (Diamant) mit Kante + wanderndem Glanzpunkt
+      px(x+2, y, 3, 2, PAL.shardHi);
+      px(x+1, y+2, 5, 4, PAL.shard);
+      px(x, y+3, 7, 2, PAL.shard);
+      px(x+2, y+6, 3, 3, PAL.shard);
+      px(x+3, y+9, 1, 2, PAL.shardHi);
+      px(x+2, y+2, 1, 2, PAL.shardHi);
+      px(x+5, y+5, 1, 2, PAL.shardDk);           // dunkle Facette
+      px(x+4, y+7, 1, 2, PAL.shardDk);
+      const gp = ((gt*1.4 + it.x*0.11) % 1.6);   // Glitzer wandert durch
+      if(gp < 1){
+        const gy2 = Math.floor(gp*9);
+        px(x+1+(gy2%4), y+gy2, 1, 2, '#ffffff');
+      }
+    }
+  }
+}
+
+function drawCrow(e){
+  const x = Math.round(e.x - cam.x), y = Math.round(e.y - cam.y);
+  if(x < -30 || x > VW+30) return;
+  const flap = Math.sin(e.t*10) > 0 ? 1 : 0;
+  const dir = e.dir || 1;
+  if(e.type === 'boss'){
+    const fl = e.flashT > 0 && Math.floor(gt*20)%2 === 0;
+    const B = fl ? '#ffffff' : PAL.crow, W = fl ? '#ffffff' : PAL.crowWing;
+    const D = fl ? '#ffffff' : PAL.crowDark;
+    const hx = dir>0 ? 14 : 0;
+    // Schwanzfedern
+    px(x+(dir>0?-4:22), y+7, 5, 3, D);
+    px(x+(dir>0?-6:26), y+8, 3, 2, B);
+    px(x, y+4, 22, 16, B);                     // Koerper
+    px(x+3, y+15, 4, 1, D);                    // Federstruktur Brust
+    px(x+9, y+17, 4, 1, D);
+    px(x+15, y+15, 4, 1, D);
+    px(x+2, y+8-flap*2, 18, 5, W);             // Fluegel (2 Frames)
+    px(x+3, y+11-flap*2, 3, 2, D);             // Federkerben
+    px(x+8, y+11-flap*2, 3, 2, D);
+    px(x+13, y+11-flap*2, 3, 2, D);
+    px(x+18, y+9-flap*2, 2, 2, D);             // Fluegelspitze
+    // Federkragen zwischen Kopf und Koerper
+    const kx = dir>0 ? 12 : 8;
+    px(x+kx, y+3, 2, 3, W); px(x+kx, y+6, 2, 3, D); px(x+kx, y+9, 2, 2, W);
+    px(x+hx, y, 10, 9, B);                     // Kopf
+    px(x+(dir>0?22:-4), y+3, 4, 3, PAL.beak);
+    px(x+(dir>0?22:-3), y+5, 3, 1, '#c77f22'); // Schnabelschatten
+    px(x+(dir>0?18:3), y+2, 3, 3, '#ff4444');  // zorniges Auge
+    px(x+(dir>0?19:4), y+3, 1, 1, '#ffffff');  // Augen-Glanz
+    px(x+(dir>0?17:2), y, 3, 1, D);            // zornige Braue (schraeg)
+    px(x+(dir>0?19:1), y+1, 2, 1, D);
+    // GOLDENE KRONE
+    px(x+hx+1, y-3, 8, 3, PAL.gold);
+    px(x+hx+1, y-5, 2, 2, PAL.gold);
+    px(x+hx+4, y-6, 2, 3, PAL.gold);
+    px(x+hx+7, y-5, 2, 2, PAL.gold);
+    px(x+hx+1, y-5, 1, 1, PAL.goldHi);
+    px(x+hx+4, y-6, 1, 1, PAL.goldHi);
+    px(x+hx+4, y-2, 2, 1, PAL.heart);          // Rubin
+    px(x+4, y+20, 3, 3, PAL.beak); px(x+14, y+20, 3, 3, PAL.beak);
+    // HP-Anzeige
+    for(let i=0;i<3;i++) px(x+2+i*7, y-10, 5, 4, i < e.hp ? PAL.heart : '#00000044');
+  } else if(e.type === 'sleeper'){
+    px(x, y+6, 3, 2, PAL.crowDark);            // Schwanz
+    px(x+1, y+3, 12, 10, PAL.crow);
+    px(x+2, y+6, 10, 3, PAL.crowWing);
+    px(x+3, y+8, 2, 1, PAL.crowDark);          // Federkerben
+    px(x+7, y+8, 2, 1, PAL.crowDark);
+    px(x+3, y+11, 3, 1, PAL.crowDark);         // Brustfedern
+    px(x+(e.awake?8:7), y, 7, 7, PAL.crow);
+    px(x+13, y+2, 3, 2, PAL.beak);
+    if(e.awake){ px(x+11, y+1, 2, 2, '#ff4444'); px(x+11, y+1, 1, 1, '#fff'); }
+    else {
+      px(x+10, y+2, 3, 1, '#888'); // geschlossenes Auge
+      txt('z', x+13, y-10 + Math.sin(e.t*2)*2, '#ffffffcc', 7);
+    }
+    px(x+3, y+13, 2, 2, PAL.beak); px(x+9, y+13, 2, 2, PAL.beak);
+  } else {
+    const bb = flap ? 0 : 1;                   // 2-Frame-Hopser
+    px(x+(dir>0?-2:12), y+5+bb, 4, 2, PAL.crowDark); // Schwanzfedern
+    px(x+1, y+3+bb, 12, 9, PAL.crow);
+    px(x+(dir>0?9:2), y+9+bb, 3, 1, PAL.crowDark);   // Brustfedern
+    px(x+2, y+5-flap+bb, 9, 4, PAL.crowWing);
+    px(x+3, y+8-flap+bb, 2, 1, PAL.crowDark);        // Federkerben am Fluegel
+    px(x+6, y+8-flap+bb, 2, 1, PAL.crowDark);
+    px(x+9, y+7-flap+bb, 2, 2, PAL.crowDark);        // Fluegelspitze
+    px(x+(dir>0?7:0), y+bb, 7, 7, PAL.crow);
+    px(x+(dir>0?13:-2), y+2+bb, 3, 2, PAL.beak);
+    px(x+(dir>0?10:2), y+1+bb, 2, 2, '#ffd447');
+    px(x+(dir>0?11:2), y+1+bb, 1, 1, PAL.crowDark);  // Pupille
+    px(x+3, y+12, 2, 2, PAL.beak); px(x+9, y+12, 2, 2, PAL.beak);
+  }
+}
+
+function drawCage(){
+  if(!cage) return;
+  const x = Math.round(cage.x - cam.x), y = Math.round(cage.y - cam.y);
+  if(x < -40 || x > VW+40) return;
+  // Zip im Kaefig (oder befreit)
+  if(!cage.open){
+    drawZip(x+7, y+17, 0);
+  }
+  // Sockel + verzierter Deckel (gold, zweifarbig)
+  px(x-2, y+cage.h-2, cage.w+4, 3, PAL.goldDk);
+  px(x-2, y+cage.h-2, cage.w+4, 1, PAL.gold);
+  px(x-2, y-2, cage.w+4, 3, PAL.goldDk);
+  px(x-2, y-2, cage.w+4, 1, PAL.gold);
+  px(x+cage.w/2-4, y-6, 8, 4, PAL.goldDk);          // Kuppel
+  px(x+cage.w/2-3, y-5, 6, 2, PAL.gold);
+  px(x+cage.w/2-1, y-9, 2, 3, PAL.gold);            // Knauf
+  px(x+cage.w/2-1, y-9, 1, 1, PAL.goldHi);
+  const barCol = PAL.gold;
+  if(cage.open){
+    px(x, y, 2, cage.h, barCol); px(x, y+2, 1, 6, PAL.goldHi);
+    px(x+cage.w-2, y, 2, cage.h, barCol); px(x+cage.w-2, y+2, 1, 6, PAL.goldHi);
+    // Tuer aufgeklappt
+    px(x+cage.w+2, y+2, 2, cage.h-8, barCol);
+  } else {
+    for(let i=0;i<=cage.w-2;i+=5){
+      px(x+i, y, 2, cage.h, barCol);
+      px(x+i, y+2, 1, 7, PAL.goldHi);               // Glanz auf jedem Stab
+      px(x+i+1, y+cage.h-8, 1, 5, PAL.goldDk);
+    }
+  }
+  txt('ZIP', x+cage.w/2, y-16, '#fff', 7, 'center');
+}
+function drawZip(x, y, hop){
+  const dy = -Math.abs(Math.sin(hop))*4;
+  px(x, y+3+dy, 9, 5, '#8ee000');       // Koerper
+  px(x+7, y+dy, 5, 5, '#8ee000');       // Kopf
+  px(x+10, y+1+dy, 1, 1, '#000');       // Auge
+  px(x-4, y+4+dy, 5, 2, '#6cb400');     // Schwanz
+  px(x+1, y+8+dy, 2, 2, '#6cb400'); px(x+6, y+8+dy, 2, 2, '#6cb400');
+}
+
+function drawShelly(){
+  if(P.invulnT > 0 && Math.floor(gt*12)%2 === 0 && state === 'play') return; // Blinken
+  const x = Math.round(P.x - cam.x), y = Math.round(P.y - cam.y);
+  const cxm = x + P.w/2;
+  const boardY = y + P.h - 4;
+  // Skateboard (mit Nose/Tail-Kick und Radnaben)
+  px(cxm-11, boardY-1, 2, 2, PAL.board);
+  px(cxm+9, boardY-1, 2, 2, PAL.board);
+  px(cxm-10, boardY, 20, 3, PAL.board);
+  px(cxm-8, boardY, 16, 1, PAL.boardHi);
+  px(cxm-7, boardY+3, 3, 2, PAL.wheel);
+  px(cxm+4, boardY+3, 3, 2, PAL.wheel);
+  px(cxm-6, boardY+3, 1, 1, '#777');
+  px(cxm+5, boardY+3, 1, 1, '#777');
+  if(P.vx > 130){ // Speed-Linien (animiert, skaliert mit Tempo)
+    const k = (P.vx-130)/(MAX_SPD-130);
+    const off = Math.round((gt*60)%8);
+    px(x-6-off, boardY-2, 4+k*6, 1, '#ffffff88');
+    px(x-10-off, boardY-8, 5+k*7, 1, '#ffffff66');
+    px(x-4-off, boardY-13, 3+k*5, 1, '#ffffff44');
+  }
+  if(P.rolling){
+    // eingerollter Panzer mit sichtbarem Spiral-Muster
+    const cy = boardY - 6;
+    ctx.fillStyle = PAL.shell;
+    ctx.beginPath(); ctx.arc(cxm, cy, 6.5, 0, 7); ctx.fill();
+    ctx.fillStyle = PAL.shellDark;
+    ctx.beginPath(); ctx.arc(cxm, cy, 6.5, P.rollA, P.rollA+1.1); ctx.lineTo(cxm, cy); ctx.fill();
+    ctx.beginPath(); ctx.arc(cxm, cy, 6.5, P.rollA+3.1, P.rollA+4.2); ctx.lineTo(cxm, cy); ctx.fill();
+    // Spirale rotiert mit
+    for(let k=0;k<4;k++){
+      const a = P.rollA + k*1.9, rad = 2 + k*1.1;
+      px(cxm + Math.cos(a)*rad - 1, cy + Math.sin(a)*rad - 1, 2, 2, k%2 ? PAL.shellDark : PAL.shellPlate);
+    }
+    px(cxm-1, cy-1, 1, 1, PAL.shellDark);   // Nabe
+    px(cxm-2, cy-3, 3, 2, PAL.shellHi);
+    px(cxm+3, cy-6, 3, 2, PAL.bow); // Schleife blitzt hervor
+  } else {
+    const bob = P.grounded ? Math.round(Math.sin(gt*13))* 1 : 0;
+    const lf = P.grounded ? Math.floor(gt*12)%3 : 1;       // Paddel-Beine, 3 Frames
+    // Beine (Paddel-Animation)
+    px(x+2, boardY-3-(lf===0?1:0), 3, 4+(lf===0?1:0), PAL.bodyDark);
+    px(x+8, boardY-3-(lf===2?1:0), 3, 4+(lf===2?1:0), PAL.bodyDark);
+    // Hals + Bauchpanzer-Ton
+    px(x+9, y+8+bob, 3, 3, PAL.body);
+    px(x+2, y+13+bob, 8, 1, PAL.belly);
+    // Panzer
+    px(x-1, y+4+bob, 12, 9, PAL.shell);
+    px(x, y+3+bob, 10, 3, PAL.shellHi);
+    px(x+1, y+11+bob, 9, 2, PAL.shellDark);
+    // Platten-Muster (Hexagon-Andeutung, 2 Reihen versetzt)
+    px(x+1, y+6+bob, 3, 3, PAL.shellPlate);
+    px(x+5, y+6+bob, 3, 3, PAL.shellPlate);
+    px(x+9, y+6+bob, 1, 3, PAL.shellPlate);
+    px(x+3, y+9+bob, 3, 2, PAL.shellPlate);
+    px(x+7, y+9+bob, 2, 2, PAL.shellPlate);
+    px(x+4, y+6+bob, 1, 3, PAL.shellDark);      // Naehte
+    px(x+8, y+6+bob, 1, 3, PAL.shellDark);
+    px(x+1, y+6+bob, 1, 1, PAL.shellHi);        // Plattenglanz
+    px(x+5, y+6+bob, 1, 1, PAL.shellHi);
+    // Kopf (nach rechts)
+    px(x+9, y+1+bob, 7, 7, PAL.body);
+    px(x+13, y+3+bob, 2, 2, '#fff');            // Auge
+    px(x+14, y+3+bob, 1, 2, '#123');            // Pupille
+    px(x+14, y+3+bob, 1, 1, '#cfeaff');         // Augen-Highlight
+    px(x+10, y+5+bob, 2, 1, PAL.bowHi);         // Wange
+    px(x+11, y+6+bob, 3, 1, PAL.bodyDark);      // Laecheln
+    // rosa Schleife (2 Toene)
+    px(x, y+bob, 3, 3, PAL.bow); px(x+4, y+bob, 3, 3, PAL.bow);
+    px(x, y+bob, 3, 1, PAL.bowHi); px(x+4, y+bob, 3, 1, PAL.bowHi);
+    px(x+3, y+1+bob, 1, 1, PAL.bowDark);
+    px(x+1, y+2+bob, 1, 1, PAL.bowDark); px(x+5, y+2+bob, 1, 1, PAL.bowDark);
+    // Paddel-Arm (3-Frame-Animation nach Tipp)
+    const pd = gt - P.paddleT;
+    if(pd < 0.3){
+      if(pd < 0.1){ px(x+6, y+7+bob, 4, 3, PAL.body); px(x+9, y+6+bob, 2, 2, PAL.body); }
+      else if(pd < 0.2){ px(x+6, y+10+bob, 5, 3, PAL.body); }
+      else { px(x+5, y+12+bob, 3, 4, PAL.body); px(x+7, y+14+bob, 3, 2, PAL.body); }
+    } else {
+      px(x+5, y+11+bob, 3, 3, PAL.body);
+    }
+  }
+}
+
+function drawParticles(){
+  for(const p of particles) px(p.x - cam.x, p.y - cam.y, p.s, p.s, p.col);
+}
+
+function drawHints(){
+  for(const h of HINTS){
+    const x = h.x - cam.x;
+    if(x < -180 || x > VW+40) continue;
+    txt(h.t, x, h.y - cam.y, '#1d5c2a', 7);
+  }
+}
+
+function drawHeart(x, y, full){
+  const c = full ? PAL.heart : '#00000033', c2 = full ? PAL.heartDark : '#00000033';
+  px(x, y, 3, 2, c); px(x+4, y, 3, 2, c);
+  px(x, y+2, 7, 2, c);
+  px(x+1, y+4, 5, 2, c2);
+  px(x+2, y+6, 3, 1, c2);
+}
+function drawHUD(){
+  for(let i=0;i<3;i++) drawHeart(6+i*10, 6, i < hearts);
+  // Salat-Zaehler
+  px(6, 17, 7, 5, PAL.salad); px(7, 16, 5, 2, PAL.salad); px(9, 17, 1, 5, PAL.saladDark);
+  txt('x'+saladCount, 16, 15, '#fff', 8);
+  // Splitter
+  for(let i=0;i<3;i++){
+    const x = VW-14-i*11, got = i < shardCount;
+    px(x+1, 6, 4, 2, got?PAL.shardHi:'#00000033');
+    px(x, 8, 6, 4, got?PAL.shard:'#00000033');
+    px(x+1, 12, 4, 2, got?PAL.shard:'#00000033');
+  }
+}
+
+function panel(w, h){
+  const x = (VW-w)/2, y = (VH-h)/2;
+  px(x-2, y-2, w+4, h+4, '#2e4a2e');
+  px(x, y, w, h, '#f7efd2');
+  px(x, y, w, 3, '#e0d3a8');
+  return {x, y};
+}
+
+function fmtTime(t){
+  const m = Math.floor(t/60), s = Math.floor(t%60);
+  return m + ':' + (s<10?'0':'') + s;
+}
+
+function drawTitle(){
+  drawSky();
+  // Boden-Streifen
+  px(0, 150, VW, 30, PAL.grass); px(0, 150, VW, 3, PAL.grassLip);
+  txt('SHELLY', VW/2, 24, '#2e7d32', 22, 'center');
+  txt('ON THE RUN!', VW/2, 48, '#e04a3a', 18, 'center');
+  txt('Ein Panzer. Ein Board. Keine Gnade.', VW/2, 76, '#3a5566', 8, 'center');
+  // grosse Shelly
+  const ox = VW/2-10, oy = 108;
+  px(ox-14, oy+22, 40, 5, PAL.board); px(ox-10, oy+22, 32, 2, PAL.boardHi);
+  px(ox-8, oy+27, 5, 4, PAL.wheel); px(ox+14, oy+27, 5, 4, PAL.wheel);
+  px(ox-8, oy+2, 24, 16, PAL.shell); px(ox-6, oy, 20, 5, PAL.shellHi);
+  // Platten-Muster
+  px(ox-5, oy+5, 6, 6, PAL.shellPlate); px(ox+3, oy+5, 6, 6, PAL.shellPlate);
+  px(ox+11, oy+5, 4, 6, PAL.shellPlate);
+  px(ox-1, oy+11, 6, 5, PAL.shellPlate); px(ox+7, oy+11, 6, 5, PAL.shellPlate);
+  px(ox+1, oy+5, 2, 11, PAL.shellDark); px(ox+9, oy+5, 2, 11, PAL.shellDark);
+  px(ox-8, oy+15, 24, 3, PAL.shellDark);
+  px(ox-8, oy+18, 22, 2, PAL.belly);
+  // Kopf
+  px(ox+12, oy-4, 13, 13, PAL.body);
+  px(ox+19, oy-1, 4, 4, '#fff'); px(ox+21, oy-1, 2, 4, '#123');
+  px(ox+21, oy-1, 1, 1, '#cfeaff');
+  px(ox+14, oy+3, 3, 2, PAL.bowHi);
+  // Schleife (2 Toene)
+  px(ox-6, oy-6, 6, 6, PAL.bow); px(ox+2, oy-6, 6, 6, PAL.bow);
+  px(ox-6, oy-6, 6, 2, PAL.bowHi); px(ox+2, oy-6, 6, 2, PAL.bowHi);
+  px(ox, oy-4, 2, 2, PAL.bowDark);
+  px(ox-4, oy+18, 5, 5, PAL.bodyDark); px(ox+6, oy+18, 5, 5, PAL.bodyDark);
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder LEERTASTE', VW/2, 158, '#fff', 9, 'center');
+  txt('PROTOTYP v0.1 - WELT 1: WIESENTAL', VW/2, 170, '#ffffff99', 6, 'center');
+}
+
+function drawIntro(){
+  drawSky();
+  const p = panel(280, 140);
+  txt('DAS TAL DER TIERE', VW/2, p.y+8, '#8a2be2', 10, 'center');
+  const L = [
+    'Rabenkoenig CORVO hat Shellys schnelle',
+    'Freunde entfuehrt - Poppy, Nio und Zip.',
+    'Nur die "langsame" Schildkroete liess',
+    'er zurueck. Sein Fehler.',
+    '',
+    'Shelly schnappt sich ein Fingerskateboard.',
+    'Rette ZIP aus dem Kaefig!',
+  ];
+  L.forEach((l,i)=>txt(l, VW/2, p.y+26+i*11, '#33424e', 8, 'center'));
+  txt('TIPPEN = Paddeln + Springen', VW/2, p.y+108, '#2e7d32', 8, 'center');
+  txt('HALTEN / RUNTER = Panzer-Roll', VW/2, p.y+119, '#2e7d32', 8, 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('- Tippen zum Start -', VW/2, p.y+132, '#e04a3a', 8, 'center');
+}
+
+function drawGameOver(){
+  px(0, 0, VW, VH, 'rgba(20,15,35,0.75)');
+  txt('MIST!', VW/2, 48, '#ff5a6a', 22, 'center');
+  txt('Corvos Kraehen lachen dich aus...', VW/2, 80, '#ddd', 8, 'center');
+  txt('"Zu langsam! Kraah!"', VW/2, 94, '#aaa', 8, 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN = Nochmal versuchen', VW/2, 130, '#fff', 9, 'center');
+}
+
+function drawPause(){
+  px(0, 0, VW, VH, 'rgba(20,30,40,0.62)');
+  txt('PAUSE', VW/2, 60, '#fff', 20, 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('Tippen zum Weiterspielen', VW/2, 96, '#ddd', 9, 'center');
+}
+
+function drawWin(){
+  px(0, 0, VW, VH, 'rgba(20,40,25,0.72)');
+  txt('GERETTET!', VW/2, 30, '#7ed957', 22, 'center');
+  drawZip(VW/2-6, 60, gt*5);
+  txt('"Danke Shelly! Du bist die Schnellste', VW/2, 82, '#eee', 8, 'center');
+  txt('von allen - auf deine Art!"', VW/2, 93, '#eee', 8, 'center');
+  txt('Salat: ' + saladCount + ' / ' + totalSalad, VW/2, 114, '#8fe14f', 9, 'center');
+  txt('Splitter: ' + shardCount + ' / ' + totalShards, VW/2, 126, PAL.shard, 9, 'center');
+  txt('Zeit: ' + fmtTime(playT), VW/2, 138, '#fff', 9, 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN = Zurueck zum Titel', VW/2, 160, '#fff', 8, 'center');
+}
+
+function render(){
+  if(state === 'title'){ drawTitle(); return; }
+  if(state === 'intro'){ drawIntro(); return; }
+
+  // Welt (auch als Hintergrund fuer Overlays)
+  ctx.save();
+  if(cam.shake > 0) ctx.translate((Math.random()-0.5)*cam.shake, (Math.random()-0.5)*cam.shake);
+  drawSky();
+  drawTiles();
+  drawCheckpoint();
+  drawCage();
+  drawCollectibles();
+  for(const e of enemies) if(e.alive) drawCrow(e);
+  if(state === 'rescue' && zip) drawZip(zip.x - cam.x, zip.y - cam.y, zip.hop);
+  drawShelly();
+  drawParticles();
+  drawHints();
+  ctx.restore();
+  // sanfter Screen-Flash beim Splitter
+  if(flashT > 0){
+    ctx.fillStyle = 'rgba(255,255,255,' + Math.min(0.55, flashT*3.2).toFixed(3) + ')';
+    ctx.fillRect(0, 0, VW, VH);
+  }
+  drawHUD();
+
+  if(state === 'gameover') drawGameOver();
+  else if(state === 'win') drawWin();
+  else if(state === 'pause') drawPause();
+  else if(state === 'rescue') txt('ZIP IST FREI!', VW/2, 40, '#fff', 12, 'center');
+}
+
+// ============================================================
+// LOOP + RESIZE
+// ============================================================
+let lastT = 0;
+function loop(ms){
+  const t = ms/1000;
+  let dt = Math.min(0.05, t - lastT || 0.016);
+  lastT = t; gt += dt;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+function resize(){
+  const s = Math.min(innerWidth/VW, innerHeight/VH);
+  cvs.style.width = Math.floor(VW*s) + 'px';
+  cvs.style.height = Math.floor(VH*s) + 'px';
+}
+addEventListener('resize', resize);
+
+makeAtlas(); buildBG();
+buildLevel(); buildHints(); resetEnemies();
+respawnPlayer(); P.invulnT = 0;
+resize();
+requestAnimationFrame(loop);
+
+// Debug-Zugriff (Prototyp)
+window.G = { P, get state(){return state;}, set state(s){state=s;}, get grid(){return grid;},
+  get enemies(){return enemies;}, get hearts(){return hearts;}, cam, startRun,
+  get collectibles(){return collectibles;}, get cage(){return cage;},
+  get checkpoint(){return checkpoint;} };
+</script>
+</body>
+</html>
