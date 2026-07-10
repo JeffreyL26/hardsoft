@@ -19,13 +19,16 @@
    SHELLY ON THE RUN! – Welt 1: Wiesental (Prototyp)
    Auto-Runner: Tippen = Paddel-Sprung, Halten = Panzer-Roll
    Aufbau: Level (Tilemap) -> Input -> Physik -> Kollision -> Render
+   Grafik: Textur-Atlas (Offscreen-Canvases, einmal vorgerendert)
    ============================================================ */
 
 const cvs = document.getElementById('game');
 const ctx = cvs.getContext('2d');
+ctx.imageSmoothingEnabled = false;
 const VW = 320, VH = 180, TILE = 16, MAPH = 12;
 
-// ---- Palette (retro, begrenzt) ----
+// ---- Palette (retro, begrenzt – Basistoene unveraendert,
+//      nur um Schattierungen fuer die Texturen erweitert) ----
 const PAL = {
   sky1:'#8be0f0', sky2:'#c9f2f7', sun:'#ffe27a',
   hillFar:'#a5d977', hillNear:'#6cb84f',
@@ -37,7 +40,20 @@ const PAL = {
   crow:'#2e2e44', crowDark:'#1e1e30', crowWing:'#4a4a6e', beak:'#f2a239',
   salad:'#8fe14f', saladDark:'#5cb82e', shard:'#ffd447', shardHi:'#fff2b0',
   heart:'#ff5a6a', heartDark:'#c22b3f',
-  txt:'#ffffff', txtShadow:'rgba(20,30,40,0.55)', hint:'#2b5c33'
+  txt:'#ffffff', txtShadow:'rgba(20,30,40,0.55)', hint:'#2b5c33',
+  // --- neue Schattierungen (Textur-Upgrade) ---
+  sky3:'#a9e9f4', sunHi:'#fff3b8', sunRay:'rgba(255,226,122,0.4)',
+  hillFarHi:'#b6e28c', hillNearHi:'#7cc45e',
+  treeFar:'#8fc863', treeFarDk:'#7cb655',
+  bush:'#579a3c', bushHi:'#7cc45e', bushDk:'#41802f',
+  grassDk:'#2f8637', dirtMid:'#7a4e2b', dirtDeep:'#5f3b20', dirtDeep2:'#4a2d16',
+  pebble:'#a9825a', pebbleHi:'#caa87b',
+  rockHi:'#c4c9cf', moss:'#5aa14e', mossDk:'#417f3c',
+  belly:'#e6cf8e', shellPlate:'#3aa25c', bowHi:'#ffa9c9',
+  gold:'#e8b83a', goldHi:'#ffe08a', goldDk:'#b8860b',
+  cloudShade:'#dff3f9', doorDark:'#2a1c3d', doorSeam:'#332246',
+  saladHi:'#b8f078', shardDk:'#dca818',
+  dust1:'#cbb491', dust2:'#e8dcbb', flower:'#ff9ecb'
 };
 
 // ============================================================
@@ -136,11 +152,14 @@ const T_EMPTY=0, T_GROUND=1, T_ROCK=2, T_LOG=3, T_RAMP_UP=4, T_RAMP_DN=5, T_DOOR
 const CHAR2TILE = { '#':T_GROUND, 'R':T_ROCK, '=':T_LOG, '/':T_RAMP_UP, '\\':T_RAMP_DN, 'D':T_DOOR };
 const isSolid = t => t===T_GROUND || t===T_ROCK || t===T_LOG || t===T_DOOR;
 
-let MAPW = 0, grid = [], SEGOFF = {};
+let MAPW = 0, grid = [], vgrid = [], SEGOFF = {};
 let spawns = [];          // Gegner-Spawn-Beschreibungen
 let collectibles = [];    // Salat + Splitter (persistieren ueber Respawn)
 let cage = null, playerStart = {x:32,y:120};
+let checkpoint = null;    // {x, y, active, animT} – nur im Speicher
 let totalSalad = 0, totalShards = 0;
+
+const hash = n => { let h = (n*2654435761)>>>0; h ^= h>>13; return (h*2246822519)>>>0; };
 
 function buildLevel(){
   MAPW = SEGS.reduce((a,s)=>a+s.w, 0);
@@ -166,6 +185,10 @@ function buildLevel(){
     }
     off += s.w;
   }
+  // EIN Checkpoint (Fahnenmast) am Anfang des 'sleep'-Segments,
+  // wird bei komplettem Neustart (startRun -> buildLevel) zurueckgesetzt.
+  checkpoint = { x:(SEGOFF['sleep']+2)*TILE, y:10*TILE, active:false, animT:0 };
+  computeVGrid();
 }
 
 function tileAt(c, r){
@@ -188,9 +211,282 @@ function buildHints(){
 }
 
 // ============================================================
+// TEXTUR-ATLAS – alle Tiles werden EINMAL beim Start auf
+// Offscreen-Canvases vorgerendert (statt fillRects pro Frame)
+// ============================================================
+const ATLAS = [];   // { cv, ox, oy }
+const AT = { grass:[], dirt:[], rock:[], logM:[], logL:0, logR:0, rampUp:0, rampDn:0, doorT:0, doorM:0 };
+function mkcv(w, h){ const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function atile(w, h, ox, oy, paint){
+  const cv = mkcv(w, h), g = cv.getContext('2d');
+  paint(g);
+  ATLAS.push({cv, ox, oy});
+  return ATLAS.length - 1;
+}
+function fr(g, x, y, w, h, c){ g.fillStyle = c; g.fillRect(x, y, w, h); }
+
+const DIRT_BASE = [PAL.dirt, PAL.dirtMid, PAL.dirtDeep];
+const DIRT_DK   = [PAL.dirtMid, PAL.dirtDeep, PAL.dirtDeep2];
+
+// Erde: Schichten-Streifen, Steinchen, optional Wurzelfaden.
+// shade 0..2 = dunkler werdend nach unten.
+function paintDirt(g, ox, oy, shade, seed, root){
+  fr(g, ox, oy, 16, 16, DIRT_BASE[shade]);
+  for(let yy=2; yy<16; yy+=5){                       // horizontale Erdschichten
+    for(let i=0;i<16;i+=4)
+      if(hash(seed*3+yy*17+i)%3) fr(g, ox+i, oy+yy, 3, 1, DIRT_DK[shade]);
+  }
+  for(let k=0;k<4;k++){                              // Steinchen + Krumen
+    const h1 = hash(seed*5+k*31);
+    const sx = h1%13, sy = 2+(hash(seed*9+k*17)%12);
+    if(h1%3===0){ fr(g, ox+sx, oy+sy, 3, 2, PAL.pebble); fr(g, ox+sx, oy+sy, 1, 1, PAL.pebbleHi); }
+    else fr(g, ox+sx, oy+sy, 2, 1, DIRT_DK[shade]);
+  }
+  if(root){                                          // Wurzel schlaengelt sich
+    let rx = 3 + hash(seed*7)%9;
+    for(let yy=0; yy<16; yy+=2){
+      fr(g, ox+rx, oy+yy, 1, 2, PAL.logDark);
+      rx += (hash(seed*11+yy)%3)-1; rx = Math.max(1, Math.min(14, rx));
+    }
+  }
+}
+
+function bl(g, x, h, c){ fr(g, x, 6-h, 1, h, c); }   // einzelner Grashalm ueber der Kante
+
+// Gras-Oberkante: hellere Lip, ausgefranste Kante, Halme/Blumen-Varianten
+function paintGrass(g, v, seed){
+  const Y = 6;                                       // Tile-Ursprung (6px Ueberhang fuer Deko)
+  paintDirt(g, 0, Y, 0, seed, false);
+  fr(g, 0, Y, 16, 5, PAL.grass);
+  for(let i=0;i<16;i+=2) if(hash(seed+i)%3===0) fr(g, i, Y+5, 2, 1, PAL.grass);  // ausgefranst
+  fr(g, 0, Y+4, 16, 1, PAL.grassDk);                 // Schattenlinie
+  fr(g, 0, Y, 16, 2, PAL.grassLip);
+  for(let i=1;i<16;i+=3) if(hash(seed*3+i)%2===0) fr(g, i, Y+2, 1, 1, PAL.grassLip); // Zacken
+  if(v===1){ bl(g, 9, 2, PAL.grass); }
+  else if(v===2){ bl(g, 2, 3, PAL.grassLip); bl(g, 7, 4, PAL.grass); bl(g, 12, 3, PAL.grassLip); }
+  else if(v===3){ fr(g, 4, Y-4, 1, 4, PAL.grass); fr(g, 6, Y-5, 1, 5, PAL.grassLip);
+                  fr(g, 8, Y-4, 1, 4, PAL.grass); bl(g, 13, 3, PAL.grassLip); }
+  else if(v===4){ bl(g, 3, 3, PAL.grassLip); bl(g, 11, 4, PAL.grass); fr(g, 10, Y-5, 1, 1, PAL.sun); }
+  else if(v===5){ fr(g, 7, Y-4, 1, 4, PAL.grass); fr(g, 6, Y-7, 3, 3, PAL.flower);
+                  fr(g, 7, Y-6, 1, 1, PAL.sun); fr(g, 8, Y-2, 2, 1, PAL.grassLip); bl(g, 2, 3, PAL.grassLip); }
+}
+
+// Fels: Highlight oben links, Risse, Moosflecken
+function paintRock(g, v){
+  fr(g, 2, 4, 12, 12, PAL.rock);
+  fr(g, 4, 2, 8, 4, PAL.rock);
+  fr(g, 3, 12, 10, 4, PAL.rockDark);
+  fr(g, 12, 8, 2, 6, PAL.rockDark);
+  fr(g, 4, 3, 5, 2, PAL.rockHi);
+  fr(g, 3, 5, 2, 4, PAL.rockHi);
+  if(v===0){ fr(g, 8, 4, 1, 3, PAL.rockDark); fr(g, 9, 7, 1, 3, PAL.rockDark); fr(g, 8, 10, 1, 2, PAL.rockDark); }
+  else     { fr(g, 6, 6, 1, 4, PAL.rockDark); fr(g, 7, 10, 1, 2, PAL.rockDark); fr(g, 11, 3, 1, 3, PAL.rockDark); }
+  fr(g, v?2:10, 13, 3, 2, PAL.moss);
+  fr(g, v?3:11, 12, 2, 1, PAL.moss);
+  fr(g, v?5:9, 14, 2, 2, PAL.mossDk);
+}
+
+// Baumstamm: Rindenkerben (vertikal), Jahresringe an den Enden
+function paintLog(g, kind, seed){ // kind 0=Mitte, 1=linkes Ende, 2=rechtes Ende
+  fr(g, 0, 3, 16, 10, PAL.log);
+  fr(g, 0, 3, 16, 2, PAL.logRing);
+  fr(g, 0, 11, 16, 2, PAL.logDark);
+  for(let i=1;i<15;i+=3){                            // Rindenkerben
+    const o = hash(seed+i)%3;
+    fr(g, i+(o===2?1:0), 5+o, 1, 4, PAL.logDark);
+  }
+  fr(g, 2, 6, 3, 1, PAL.logRing); fr(g, 9, 8, 3, 1, PAL.logRing);  // Lichtkanten
+  if(kind===1){                                      // Jahresringe (Stirnseite links)
+    fr(g, 0, 3, 5, 10, PAL.logRing);
+    fr(g, 1, 4, 3, 8, PAL.log);
+    fr(g, 1, 6, 2, 4, PAL.logRing);
+    fr(g, 2, 7, 1, 2, PAL.logDark);
+  } else if(kind===2){                               // Jahresringe rechts
+    fr(g, 11, 3, 5, 10, PAL.logRing);
+    fr(g, 12, 4, 3, 8, PAL.log);
+    fr(g, 13, 6, 2, 4, PAL.logRing);
+    fr(g, 13, 7, 1, 2, PAL.logDark);
+  }
+}
+
+// Rampe: Erdtextur + Grasnarbe entlang der Schraege
+function paintRamp(g, up){
+  const Y = 4, seed = up?77:88;
+  for(let i=0;i<16;i++){
+    const top = up ? Y+15-i : Y+i;
+    fr(g, i, top, 1, Y+16-top, PAL.dirt);
+  }
+  for(let k=0;k<6;k++){                              // Erdkrumen im Dreieck
+    const i = 2+(hash(seed+k*13)%12);
+    const surf = up ? Y+15-i : Y+i;
+    const room = Y+15-surf-3;
+    if(room > 0){
+      const yy = surf + 3 + (hash(seed*3+k*7)%room);
+      fr(g, i, yy, 2, 1, PAL.dirtMid);
+    }
+  }
+  fr(g, up?12:2, Y+13, 3, 2, PAL.pebble); fr(g, up?12:2, Y+13, 1, 1, PAL.pebbleHi);
+  for(let i=0;i<16;i++){                             // Grasnarbe + Halme
+    const top = up ? Y+15-i : Y+i;
+    fr(g, i, top, 1, 2, PAL.grassLip);
+    fr(g, i, top+2, 1, 2, PAL.grass);
+    if(hash(seed*7+i)%4===0) fr(g, i, top-2, 1, 2, PAL.grassLip);
+  }
+}
+
+// Tor: Holzplanken + Metallbaender mit Nieten
+function paintDoor(g, top){
+  fr(g, 2, 0, 12, 16, PAL.door);
+  fr(g, 4, 0, 2, 16, PAL.doorBar); fr(g, 9, 0, 2, 16, PAL.doorBar);
+  fr(g, 3, 0, 1, 16, PAL.doorSeam); fr(g, 8, 0, 1, 16, PAL.doorSeam); fr(g, 13, 0, 1, 16, PAL.doorSeam);
+  const bys = top ? [12] : [2, 10];
+  for(const by of bys){
+    fr(g, 2, by, 12, 3, PAL.rockDark);
+    fr(g, 2, by, 12, 1, PAL.rock);
+    fr(g, 3, by+1, 1, 1, PAL.gold); fr(g, 7, by+1, 1, 1, PAL.gold); fr(g, 12, by+1, 1, 1, PAL.gold);
+  }
+  if(top){
+    fr(g, 2, 0, 12, 3, PAL.doorDark);                // Sturz
+    fr(g, 2, 3, 12, 1, PAL.doorBar);
+  }
+}
+
+function makeAtlas(){
+  for(let v=0;v<6;v++) AT.grass.push(atile(16, 22, 0, -6, g=>paintGrass(g, v, 101+v*37)));
+  for(let sh=0;sh<3;sh++) for(let v=0;v<3;v++)
+    AT.dirt.push(atile(16, 16, 0, 0, g=>paintDirt(g, 0, 0, sh, 211+sh*53+v*17, v===2)));
+  for(let v=0;v<2;v++) AT.rock.push(atile(16, 16, 0, 0, g=>paintRock(g, v)));
+  for(let v=0;v<2;v++) AT.logM.push(atile(16, 16, 0, 0, g=>paintLog(g, 0, 401+v*29)));
+  AT.logL = atile(16, 16, 0, 0, g=>paintLog(g, 1, 431));
+  AT.logR = atile(16, 16, 0, 0, g=>paintLog(g, 2, 457));
+  AT.rampUp = atile(16, 20, 0, -4, g=>paintRamp(g, true));
+  AT.rampDn = atile(16, 20, 0, -4, g=>paintRamp(g, false));
+  AT.doorT = atile(16, 16, 0, 0, g=>paintDoor(g, true));
+  AT.doorM = atile(16, 16, 0, 0, g=>paintDoor(g, false));
+}
+
+// Variantengitter: pro Zelle EINMAL beim Levelbau die Atlas-Kachel
+// deterministisch (hash-basiert) auswaehlen.
+function computeVGrid(){
+  vgrid = [];
+  for(let r=0;r<MAPH;r++){
+    const row = new Int16Array(MAPW).fill(-1);
+    for(let c=0;c<MAPW;c++){
+      const t = grid[r][c];
+      if(t===T_GROUND){
+        if(tileAt(c, r-1)===T_EMPTY){
+          const h2 = hash(c*13)%10;   // gleiche Verteilung wie im Prototyp
+          row[c] = AT.grass[ h2<3 ? 2+h2 : (h2===4 ? 5 : hash(c*7)%2) ];
+        } else {
+          let n = 0, rr = r-1;
+          while(rr>=0 && grid[rr][c]===T_GROUND){ n++; rr--; }
+          const sh = n<=1 ? 0 : (n<=3 ? 1 : 2);      // dunkler nach unten
+          row[c] = AT.dirt[sh*3 + hash(c*29+r*11)%3];
+        }
+      }
+      else if(t===T_ROCK) row[c] = AT.rock[hash(c*17+r*5)%2];
+      else if(t===T_LOG){
+        const L = tileAt(c-1, r)===T_LOG, R = tileAt(c+1, r)===T_LOG;
+        row[c] = !L ? AT.logL : (!R ? AT.logR : AT.logM[hash(c*5)%2]);
+      }
+      else if(t===T_RAMP_UP) row[c] = AT.rampUp;
+      else if(t===T_RAMP_DN) row[c] = AT.rampDn;
+      else if(t===T_DOOR) row[c] = tileAt(c, r-1)===T_DOOR ? AT.doorM : AT.doorT;
+    }
+    vgrid.push(row);
+  }
+}
+
+// ============================================================
+// HINTERGRUND – 3 Parallax-Ebenen, einmalig als kachelbare
+// Streifen vorgerendert (Sinus-Perioden teilen 480 -> nahtlos)
+// ============================================================
+const BG = { sun:null, clouds:[], far:null, near:null };
+const BGW = 480;
+function hillY(w, baseY, amp){
+  return baseY - amp*(0.5+0.5*Math.sin(w*0.01308997)) - 8*Math.sin(w*0.03926991);
+}
+function paintTreeFar(g, x, y, v){
+  if(v===0){ // Nadelbaum
+    fr(g, x-2, y-4, 5, 2, PAL.treeFarDk);
+    fr(g, x-1, y-6, 3, 2, PAL.treeFar);
+    fr(g, x, y-8, 1, 2, PAL.treeFar);
+    fr(g, x, y-2, 1, 2, PAL.treeFarDk);
+  } else {   // Laubbaum
+    fr(g, x-2, y-6, 5, 4, PAL.treeFar);
+    fr(g, x-1, y-7, 3, 1, PAL.treeFar);
+    fr(g, x-2, y-3, 5, 1, PAL.treeFarDk);
+    fr(g, x, y-2, 1, 2, PAL.treeFarDk);
+  }
+}
+function paintBush(g, x, y, v){
+  fr(g, x-3, y-3, 7, 3, PAL.bush);
+  fr(g, x-2, y-4, 5, 1, PAL.bush);
+  fr(g, x-2, y-4, 3, 1, PAL.bushHi);
+  fr(g, x-3, y-1, 7, 1, PAL.bushDk);
+  if(v) fr(g, x-1, y-5, 1, 1, PAL.flower);
+}
+function buildBG(){
+  // Sonne mit dezentem Strahlenkranz
+  BG.sun = mkcv(40, 40); const s = BG.sun.getContext('2d');
+  for(let k=0;k<8;k++){
+    const a = k*Math.PI/4;
+    fr(s, 19+Math.round(Math.cos(a)*16)-1, 19+Math.round(Math.sin(a)*16)-1, 2, 2, PAL.sunRay);
+    fr(s, 19+Math.round(Math.cos(a+0.39)*18)-1, 19+Math.round(Math.sin(a+0.39)*18)-1, 1, 1, PAL.sunRay);
+  }
+  s.fillStyle = PAL.sun; s.beginPath(); s.arc(19, 19, 13, 0, 7); s.fill();
+  fr(s, 13, 13, 12, 12, PAL.sun);
+  fr(s, 14, 14, 6, 4, PAL.sunHi); fr(s, 15, 19, 3, 2, PAL.sunHi);
+
+  // Wolken: 3 Pixel-Formen
+  for(let v=0;v<3;v++){
+    const cv = mkcv(34, 13), g = cv.getContext('2d');
+    if(v===0){ fr(g,2,6,28,5,'#fff'); fr(g,8,2,15,5,'#fff'); fr(g,4,4,7,4,'#fff'); fr(g,4,9,24,2,PAL.cloudShade); }
+    else if(v===1){ fr(g,0,7,34,4,'#fff'); fr(g,5,4,13,4,'#fff'); fr(g,21,5,9,3,'#fff'); fr(g,2,9,30,2,PAL.cloudShade); }
+    else { fr(g,4,7,25,4,'#fff'); fr(g,6,3,9,5,'#fff'); fr(g,16,2,10,6,'#fff'); fr(g,6,9,21,2,PAL.cloudShade); }
+    BG.clouds.push(cv);
+  }
+
+  // Ferne Huegelkette (hell) mit Waeldchen
+  BG.far = mkcv(BGW, VH); const f = BG.far.getContext('2d');
+  for(let x=0;x<BGW;x++){
+    const y = Math.round(hillY(x, 118, 34));
+    fr(f, x, y, 1, VH-y, PAL.hillFar);
+    fr(f, x, y, 1, 2, PAL.hillFarHi);
+  }
+  for(let k=0;k<11;k++){
+    const tx = 10+(k*43+hash(k*7)%20);
+    if(tx > BGW-14) break;
+    const ty = Math.round(hillY(tx, 118, 34));
+    paintTreeFar(f, tx, ty, hash(k*13)%2);
+    if(hash(k*3)%2) paintTreeFar(f, tx+6, Math.round(hillY(tx+6, 118, 34)), hash(k*17)%2);
+  }
+
+  // Nahe Huegel mit Bueschen und Bluemchen
+  BG.near = mkcv(BGW, VH); const n = BG.near.getContext('2d');
+  for(let x=0;x<BGW;x++){
+    const y = Math.round(hillY(x+137, 136, 26));   // Phase versetzt (tilet weiterhin)
+    fr(n, x, y, 1, VH-y, PAL.hillNear);
+    fr(n, x, y, 1, 2, PAL.hillNearHi);
+  }
+  for(let k=0;k<9;k++){
+    const bx = 14+(k*52+hash(k*23)%26);
+    if(bx > BGW-10) break;
+    paintBush(n, bx, Math.round(hillY(bx+137, 136, 26)), hash(k*29)%2);
+  }
+  for(let k=0;k<12;k++){
+    const fx = 6+(k*39+hash(k*41)%22);
+    if(fx > BGW-4) break;
+    const fy = Math.round(hillY(fx+137, 136, 26)) + 3 + (hash(k)%6);
+    fr(n, fx, fy, 1, 2, PAL.grassDk);
+    fr(n, fx, fy-1, 1, 1, hash(k*5)%2 ? PAL.flower : PAL.sun);
+  }
+}
+
+// ============================================================
 // STATE
 // ============================================================
-let state = 'title';   // title | intro | play | rescue | gameover | win
+let state = 'title';   // title | intro | play | pause | rescue | gameover | win
 let stateT = 0;        // Zeit im aktuellen State
 let gt = 0;            // globale Zeit
 let playT = 0;         // Spielzeit des Laufs
@@ -198,7 +494,8 @@ let hearts = 3, saladCount = 0, shardCount = 0;
 let bossDead = false;
 let enemies = [], particles = [];
 let cam = {x:0, y:MAPH*TILE - VH, shake:0};
-let zip = null; // Zip-Animation bei Rettung
+let zip = null;        // Zip-Animation bei Rettung
+let flashT = 0;        // Screen-Flash beim Splitter
 
 const P = {
   x:0, y:0, w:13, h:19, vx:0, vy:0,
@@ -209,6 +506,98 @@ const P = {
 // Physik-Konstanten
 const GRAV = 850, JUMP_V = -292, BASE_SPD = 80, MAX_SPD = 205;
 const PADDLE_BOOST = 55, COYOTE = 0.1, JBUF = 0.13;
+
+// Vibration (Mobile) – nur wenn verfuegbar
+const SHARD_VIB = [12, 30, 12];
+function vib(p){ if(navigator.vibrate) navigator.vibrate(p); }
+
+// ============================================================
+// AUDIO – Chiptune-SFX + Hintergrund-Loop (WebAudio, ohne Assets)
+// Initialisiert erst bei der ersten Nutzer-Geste (Autoplay-Policy).
+// ============================================================
+const AU = {
+  ctx:null, master:null, muted:false, musicOn:false,
+  nextT:0, step:0, _noiseBuf:null,
+  // I-V-vi-IV in C: Bass (Wurzel/Quinte) + sparsame Pentatonik-Melodie, 32 Achtel
+  BASS:[65,0,98,0,65,0,98,0, 98,0,147,0,98,0,147,0, 110,0,165,0,110,0,165,0, 87,0,131,0,87,0,131,0],
+  MEL:[659,0,784,0,523,0,0,0, 587,0,392,0,0,0,587,0, 659,0,523,0,440,0,0,0, 523,0,440,0,349,0,0,0],
+  init(){
+    if(this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : 0.5;
+    this.master.connect(this.ctx.destination);
+    setInterval(() => this.sched(), 60);
+  },
+  resume(){ if(this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); },
+  // Android-WebView spielt WebAudio im Hintergrund weiter -> hart anhalten
+  suspend(){ if(this.ctx && this.ctx.state === 'running') this.ctx.suspend(); },
+  setMute(m){
+    this.muted = m;
+    if(this.master) this.master.gain.value = m ? 0 : 0.5;
+    // beim Entstummen Scheduler neu aufsetzen (sonst Noten-Burst durch Aufholen)
+    if(!m && this.ctx) this.nextT = this.ctx.currentTime + 0.06;
+  },
+  setMusic(on){
+    if(on === this.musicOn) return;
+    this.musicOn = on;
+    if(on && this.ctx){ this.nextT = this.ctx.currentTime + 0.06; }
+  },
+  toneAt(f, at, dur, type, vol, f1){
+    if(!this.ctx || this.muted) return;
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, at);
+    if(f1) o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), at + dur);
+    g.gain.setValueAtTime(vol, at);
+    g.gain.exponentialRampToValueAtTime(0.001, at + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(at); o.stop(at + dur + 0.02);
+  },
+  tone(f, f1, t0, dur, type, vol){
+    if(this.ctx) this.toneAt(f, this.ctx.currentTime + t0, dur, type, vol, f1);
+  },
+  noise(t0, dur, vol){
+    if(!this.ctx || this.muted) return;
+    const c = this.ctx;
+    if(!this._noiseBuf){
+      const b = c.createBuffer(1, (c.sampleRate*0.3)|0, c.sampleRate);
+      const d = b.getChannelData(0);
+      for(let i=0;i<d.length;i++) d[i] = Math.random()*2 - 1;
+      this._noiseBuf = b;
+    }
+    const at = c.currentTime + t0;
+    const s = c.createBufferSource(), g = c.createGain();
+    s.buffer = this._noiseBuf;
+    g.gain.setValueAtTime(vol, at);
+    g.gain.exponentialRampToValueAtTime(0.001, at + dur);
+    s.connect(g); g.connect(this.master);
+    s.start(at); s.stop(at + dur + 0.02);
+  },
+  sched(){ // Musik-Scheduler mit Lookahead (~112 BPM, Achtel = 0.268s)
+    if(!this.ctx || !this.musicOn || this.muted) return;
+    while(this.nextT < this.ctx.currentTime + 0.18){
+      const i = this.step % 32;
+      if(this.BASS[i]) this.toneAt(this.BASS[i], this.nextT, 0.24, 'triangle', 0.10);
+      if(this.MEL[i])  this.toneAt(this.MEL[i],  this.nextT, 0.20, 'square',   0.05);
+      this.nextT += 0.268; this.step++;
+    }
+  },
+  // --- SFX ---
+  jump(){ this.tone(300, 660, 0, 0.14, 'square', 0.15); },
+  bounce(){ this.tone(400, 950, 0, 0.18, 'square', 0.17); },
+  salad(){ this.tone(880, 1320, 0, 0.09, 'square', 0.11); },
+  shard(){ [660,880,1320].forEach((f,i)=>this.tone(f, 0, i*0.07, 0.12, 'square', 0.14)); },
+  stomp(){ this.tone(300, 90, 0, 0.16, 'triangle', 0.3); this.noise(0, 0.1, 0.12); },
+  hurt(){ this.tone(200, 70, 0, 0.3, 'sawtooth', 0.18); },
+  checkpoint(){ [523,784].forEach((f,i)=>this.tone(f, 0, i*0.09, 0.15, 'square', 0.13)); },
+  door(){ this.tone(120, 60, 0, 0.5, 'sawtooth', 0.22); this.noise(0, 0.3, 0.15); },
+  bossHit(){ this.tone(250, 80, 0, 0.2, 'square', 0.2); this.noise(0, 0.12, 0.14); },
+  fanfare(){ [523,659,784,1047].forEach((f,i)=>this.tone(f, 0, i*0.13, i===3?0.5:0.14, 'square', 0.15)); },
+  gameover(){ [392,330,262,196].forEach((f,i)=>this.tone(f, 0, i*0.18, 0.22, 'triangle', 0.16)); },
+  click(){ this.tone(700, 0, 0, 0.05, 'square', 0.09); }
+};
 
 function resetEnemies(){
   enemies = [];
@@ -226,22 +615,26 @@ function resetEnemies(){
 
 function openDoor(){
   for(let r=0;r<MAPH;r++) for(let c=0;c<MAPW;c++)
-    if(grid[r][c] === T_DOOR){ grid[r][c] = 0; puff(c*TILE+8, r*TILE+8, PAL.doorBar, 3); }
+    if(grid[r][c] === T_DOOR){ grid[r][c] = 0; vgrid[r][c] = -1; puff(c*TILE+8, r*TILE+8, PAL.doorBar, 3); }
+  computeVGrid(); // Bodenkacheln unter dem entfernten Tor neu klassifizieren (Gras statt Dirt)
   cam.shake = Math.max(cam.shake, 3);
 }
 
 function respawnPlayer(){
-  P.x = playerStart.x; P.y = playerStart.y;
-  P.vx = BASE_SPD; P.vy = 0; P.rolling = false;
+  const sp = (checkpoint && checkpoint.active)
+    ? {x:checkpoint.x - 2, y:checkpoint.y - 19}
+    : playerStart;
+  P.x = sp.x; P.y = sp.y;
+  P.vx = BASE_SPD; P.vy = 0; P.rolling = false; P.h = 19;
   P.grounded = false; P.invulnT = 1.2;
   cam.x = Math.max(0, P.x - 100);
   resetEnemies();
 }
 
-function startRun(){          // kompletter Neustart des Levels
+function startRun(){          // kompletter Neustart des Levels (Checkpoint resettet)
   buildLevel(); buildHints();
   hearts = 3; saladCount = 0; shardCount = 0; bossDead = false;
-  particles = []; playT = 0; zip = null;
+  particles = []; playT = 0; zip = null; flashT = 0;
   respawnPlayer(); P.invulnT = 0;
   state = 'play'; stateT = 0;
 }
@@ -253,28 +646,64 @@ let jumpBufT = -9, lastTapT = -9, pointerHeld = false, holdT = 0, keyRoll = fals
 
 function tap(){
   if(state === 'play'){ jumpBufT = gt; lastTapT = gt; }
+  else if(state === 'pause'){ if(stateT > 0.15){ state = 'play'; stateT = 0; holdT = -9; } } // Resume-Tap darf kein Rollen ausloesen
   else menuAdvance();
 }
 function menuAdvance(){
   if(stateT < 0.5) return; // Doppel-Tipp-Schutz
+  AU.click();
   if(state === 'title'){ state = 'intro'; stateT = 0; }
   else if(state === 'intro'){ startRun(); }
   else if(state === 'gameover'){ startRun(); }
   else if(state === 'win'){ state = 'title'; stateT = 0; }
 }
 
+// Bildschirm-Koordinaten -> Canvas-Koordinaten (fuer den Mute-Button)
+function canvasPos(e){
+  const r = cvs.getBoundingClientRect();
+  if(!r.width || !r.height) return { x:-1, y:-1 };  // Layout (noch) nicht da
+  return { x:(e.clientX - r.left)/r.width*VW, y:(e.clientY - r.top)/r.height*VH };
+}
+
 addEventListener('keydown', e => {
   if(e.repeat) return;
+  AU.init(); AU.resume();
   if(e.code==='Space' || e.code==='ArrowUp' || e.code==='KeyW'){ tap(); e.preventDefault(); }
   if(e.code==='ArrowDown' || e.code==='KeyS'){ keyRoll = true; e.preventDefault(); }
+  if(e.code==='KeyM'){ AU.setMute(!AU.muted); }
 });
 addEventListener('keyup', e => {
   if(e.code==='ArrowDown' || e.code==='KeyS') keyRoll = false;
 });
-addEventListener('pointerdown', e => { e.preventDefault(); pointerHeld = true; holdT = 0; tap(); });
-addEventListener('pointerup',   () => { pointerHeld = false; });
-addEventListener('pointercancel',() => { pointerHeld = false; });
+const activePointers = new Set();
+addEventListener('pointerdown', e => {
+  e.preventDefault();
+  AU.init(); AU.resume();
+  // Mute-Button (Ecke unten rechts) faengt den Tap ab
+  const cp = canvasPos(e);
+  if(cp.x > VW-26 && cp.y > VH-22){ AU.setMute(!AU.muted); AU.click(); return; }
+  activePointers.add(e.pointerId);
+  pointerHeld = true;
+  if(activePointers.size === 1){ holdT = 0; tap(); } // nur der erste Finger zaehlt als Tap/Hold
+});
+addEventListener('pointerup',   e => { activePointers.delete(e.pointerId); pointerHeld = activePointers.size > 0; });
+addEventListener('pointercancel',e => { activePointers.delete(e.pointerId); pointerHeld = activePointers.size > 0; });
 addEventListener('touchmove', e => e.preventDefault(), {passive:false});
+addEventListener('contextmenu', e => e.preventDefault());
+
+// App in den Hintergrund -> Pause (nur waehrend des Spielens)
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden && state === 'play'){
+    state = 'pause'; stateT = 0;
+    pointerHeld = false; keyRoll = false; activePointers.clear();
+  }
+  // Musik sofort stoppen: ohne rAF laeuft update() nicht mehr,
+  // der Interval-Scheduler wuerde sonst im Hintergrund weiterdudeln
+  if(document.hidden){ AU.setMusic(false); AU.suspend(); }
+  else AU.resume();
+});
+// Fokusverlust: gehaltene Eingaben loslassen (keyup/pointerup kommen sonst nie an)
+addEventListener('blur', () => { pointerHeld = false; keyRoll = false; activePointers.clear(); });
 
 // ============================================================
 // UPDATE
@@ -282,17 +711,19 @@ addEventListener('touchmove', e => e.preventDefault(), {passive:false});
 function hurt(knock){
   if(P.invulnT > 0) return;
   hearts--;
+  vib(30); AU.hurt();
   cam.shake = Math.max(cam.shake, 3);
   puff(P.x+7, P.y+8, PAL.heart, 6);
-  if(hearts <= 0){ state = 'gameover'; stateT = 0; return; }
+  if(hearts <= 0){ state = 'gameover'; stateT = 0; AU.gameover(); return; }
   P.invulnT = 1.4;
   if(knock){ P.vy = -160; P.vx = BASE_SPD*0.4; }
 }
 
 function fallDeath(){
   hearts--;
-  if(hearts <= 0){ state = 'gameover'; stateT = 0; return; }
-  respawnPlayer();
+  vib(30); AU.hurt();
+  if(hearts <= 0){ state = 'gameover'; stateT = 0; AU.gameover(); return; }
+  respawnPlayer();   // respawnt am Checkpoint, falls aktiviert
 }
 
 function overlap(a, b){
@@ -344,12 +775,14 @@ function updatePlayer(dt){
       P.paddleT = gt;
       P.grounded = false; jumpBufT = -9;
       puff(P.x+4, P.y+P.h, '#ffffff', 3);
+      AU.jump();
     }
   }
 
   // --- Gravitation (eingerollt in der Luft: schneller fallen) ---
   const g = (P.rolling && !P.grounded) ? GRAV*1.55 : GRAV;
   P.vy = Math.min(P.rolling?460:400, P.vy + g*dt);
+  const fallV = P.vy;          // fuer Lande-Staub
 
   const wasGrounded = P.grounded;
   P.grounded = false;
@@ -403,16 +836,36 @@ function updatePlayer(dt){
   if(P.rolling) P.rollA += P.vx*dt/6;
   P.invulnT = Math.max(0, P.invulnT - dt);
 
+  // --- Lande-Staub (Juice, rein kosmetisch) ---
+  if(P.grounded && !wasGrounded && fallV > 170){
+    dust(P.x + P.w/2, P.y + P.h);
+    if(fallV > 330) cam.shake = Math.max(cam.shake, 1.5);
+  }
+
   // --- Sturz in Luecke ---
   if(P.y > MAPH*TILE + 30){ fallDeath(); return; }
+
+  // --- Checkpoint beruehren ---
+  if(checkpoint && !checkpoint.active &&
+     P.x + P.w > checkpoint.x && P.x < checkpoint.x + 12 &&
+     P.y + P.h > checkpoint.y - 28){
+    checkpoint.active = true; checkpoint.animT = 0;
+    sparkle(checkpoint.x + 6, checkpoint.y - 20, PAL.bow);
+    puff(checkpoint.x + 6, checkpoint.y - 4, PAL.grassLip, 4);
+    vib(20); AU.checkpoint();
+  }
 
   // --- Collectibles ---
   for(const it of collectibles){
     if(it.got) continue;
     if(overlap(P, it)){
       it.got = true;
-      if(it.kind === 'salad'){ saladCount++; sparkle(it.x+3, it.y+3, PAL.salad); }
-      else { shardCount++; sparkle(it.x+3, it.y+5, PAL.shard); cam.shake = Math.max(cam.shake,2); }
+      if(it.kind === 'salad'){ saladCount++; sparkle(it.x+3, it.y+3, PAL.salad); AU.salad(); }
+      else {
+        shardCount++; sparkle(it.x+3, it.y+5, PAL.shard);
+        cam.shake = Math.max(cam.shake, 2);
+        flashT = 0.16; vib(SHARD_VIB); AU.shard();
+      }
     }
   }
 
@@ -423,6 +876,7 @@ function updatePlayer(dt){
     zip = {x:cage.x+8, y:cage.y+18, vy:0, hop:0};
     P.vx = 0;
     sparkle(cage.x+11, cage.y+10, PAL.shard);
+    AU.fanfare();
   }
 }
 
@@ -469,19 +923,20 @@ function updateEnemies(dt){
       hurt(true);
       continue;
     }
-    if(P.rolling && e.type === 'guard'){ killEnemy(e); continue; } // Panzer-Roll zerschmettert
+    if(P.rolling && e.type === 'guard'){ killEnemy(e); AU.stomp(); continue; } // Panzer-Roll zerschmettert
 
     const stomp = P.vy > 40 && (P.y + P.h) < e.y + e.h*0.65;
     if(stomp && !P.rolling){
       const high = (gt - lastTapT) < 0.16; // Shell-Bounce: Tipp beim Aufprall
       if(e.type === 'boss'){
         e.hp--; e.flashT = 0.25; e.stunT = 0.6;
+        vib(15); AU.bossHit();
         cam.shake = Math.max(cam.shake, 3);
         puff(e.x+e.w/2, e.y, '#fff', 4);
-        if(e.hp <= 0){ killEnemy(e); bossDead = true; openDoor(); }
-      } else killEnemy(e);
+        if(e.hp <= 0){ killEnemy(e); bossDead = true; openDoor(); AU.door(); }
+      } else { killEnemy(e); AU.stomp(); }
       P.vy = high ? -338 : -200;
-      if(high) sparkle(P.x+6, P.y+P.h, PAL.shard);
+      if(high){ sparkle(P.x+6, P.y+P.h, PAL.shard); AU.bounce(); }
       jumpBufT = -9;
     } else if(e.type === 'boss' && P.rolling){
       P.vx = -40; P.vy = -140; // Boss blockt den Roll, prallt ab
@@ -504,6 +959,13 @@ function sparkle(x, y, col){
     particles.push({x, y, vx:Math.cos(a)*55, vy:Math.sin(a)*55-25, life:0.4, col, s:2});
   }
 }
+function dust(x, y){   // Staub beim Landen
+  for(let i=0;i<5;i++) particles.push({
+    x: x+(Math.random()-0.5)*10, y: y-1,
+    vx: (Math.random()-0.5)*70, vy: -Math.random()*45,
+    life: 0.25+Math.random()*0.2, col: i%2 ? PAL.dust1 : PAL.dust2, s:2
+  });
+}
 function updateParticles(dt){
   for(const p of particles){ p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=300*dt; }
   particles = particles.filter(p => p.life > 0);
@@ -512,6 +974,9 @@ function updateParticles(dt){
 function update(dt){
   stateT += dt;
   if(pointerHeld) holdT += dt;
+  flashT = Math.max(0, flashT - dt);
+  AU.setMusic(state === 'play' || state === 'rescue'); // Loop nur im Spiel
+  cam.shake = Math.max(0, cam.shake - 14*dt); // Shake in jedem State abbauen (sonst zittert Gameover/Pause dauerhaft)
 
   if(state === 'play'){
     playT += dt;
@@ -519,10 +984,12 @@ function update(dt){
     if(state !== 'play') { updateParticles(dt); return; } // Tod diese Frame
     updateEnemies(dt);
     updateParticles(dt);
+    if(checkpoint && checkpoint.active && checkpoint.animT < 2) checkpoint.animT += dt;
     // Kamera
     const target = Math.max(0, Math.min(P.x - 100, MAPW*TILE - VW));
     cam.x += (target - cam.x)*Math.min(1, 12*dt);
-    cam.shake = Math.max(0, cam.shake - 14*dt);
+  } else if(state === 'pause'){
+    // eingefroren – nur auf Tipp warten
   } else if(state === 'rescue'){
     updateParticles(dt);
     if(zip){
@@ -541,92 +1008,143 @@ function update(dt){
 // RENDER
 // ============================================================
 function px(x, y, w, h, c){ ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
-function txt(s, x, y, c, size, align){
-  ctx.font = 'bold ' + (size||8) + 'px monospace';
-  ctx.textAlign = align || 'left'; ctx.textBaseline = 'top';
-  ctx.fillStyle = PAL.txtShadow; ctx.fillText(s, Math.round(x)+1, Math.round(y)+1);
-  ctx.fillStyle = c || PAL.txt;  ctx.fillText(s, Math.round(x), Math.round(y));
+
+// ============================================================
+// PIXEL-FONT 5x7 – jede Glyphe = 7 Zeilen-Bitmasken (Bit 4 = links).
+// Per fillRect gezeichnet -> pixelscharf bei jeder Skalierung,
+// kein Anti-Aliasing wie bei ctx.fillText.
+// ============================================================
+const FONT = {
+  A:[14,17,17,31,17,17,17], B:[30,17,17,30,17,17,30], C:[14,17,16,16,16,17,14],
+  D:[28,18,17,17,17,18,28], E:[31,16,16,30,16,16,31], F:[31,16,16,30,16,16,16],
+  G:[14,17,16,23,17,17,15], H:[17,17,17,31,17,17,17], I:[14,4,4,4,4,4,14],
+  J:[7,2,2,2,2,18,12],      K:[17,18,20,24,20,18,17], L:[16,16,16,16,16,16,31],
+  M:[17,27,21,21,17,17,17], N:[17,25,21,19,17,17,17], O:[14,17,17,17,17,17,14],
+  P:[30,17,17,30,16,16,16], Q:[14,17,17,17,21,18,13], R:[30,17,17,30,20,18,17],
+  S:[15,16,16,14,1,1,30],   T:[31,4,4,4,4,4,4],       U:[17,17,17,17,17,17,14],
+  V:[17,17,17,17,17,10,4],  W:[17,17,17,21,21,21,10], X:[17,17,10,4,10,17,17],
+  Y:[17,17,10,4,4,4,4],     Z:[31,1,2,4,8,16,31],
+  '0':[14,17,19,21,25,17,14],'1':[4,12,4,4,4,4,14],   '2':[14,17,1,6,8,16,31],
+  '3':[31,2,4,6,1,17,14],   '4':[2,6,10,18,31,2,2],   '5':[31,16,30,1,1,17,14],
+  '6':[6,8,16,30,17,17,14], '7':[31,1,2,4,8,8,8],     '8':[14,17,17,14,17,17,14],
+  '9':[14,17,17,15,1,2,12],
+  '.':[0,0,0,0,0,12,12],    ',':[0,0,0,0,12,12,8],    '!':[4,4,4,4,4,0,4],
+  '?':[14,17,1,6,4,0,4],    ':':[0,12,12,0,12,12,0],  '-':[0,0,0,14,0,0,0],
+  '=':[0,0,31,0,31,0,0],    '/':[1,1,2,4,8,16,16],    '"':[10,10,0,0,0,0,0],
+  "'":[4,4,0,0,0,0,0],      '(':[2,4,8,8,8,4,2],      ')':[8,4,2,2,2,4,8],
+  '+':[0,4,4,31,4,4,0]
+};
+
+function drawChar(g, x, y, sc, c){
+  ctx.fillStyle = c;
+  for(let r=0;r<7;r++){
+    const row = g[r]; if(!row) continue;
+    let b = 4;
+    while(b >= 0){                       // zusammenhaengende Pixel als ein Rect
+      if(row & (1<<b)){
+        let run = 1;
+        while(b-run >= 0 && (row & (1<<(b-run)))) run++;
+        ctx.fillRect(x + (4-b)*sc, y + r*sc, run*sc, sc);
+        b -= run;
+      } else b--;
+    }
+  }
 }
-const hash = n => { let h = (n*2654435761)>>>0; h ^= h>>13; return (h*2246822519)>>>0; };
+function drawText(s, x, y, sc, c){
+  for(let i=0;i<s.length;i++){
+    const g = FONT[s[i]];
+    if(g) drawChar(g, x + i*6*sc, y, sc, c);
+  }
+}
+function textW(s, sc){ return s.length ? (s.length*6 - 1)*sc : 0; }
+function alignX(s, x, sc, align){
+  const w = textW(s, sc);
+  return Math.round(align==='center' ? x - w/2 : align==='right' ? x - w : x);
+}
+
+// Kompatible Signatur (size -> Skalierung), mit Drop-Shadow
+function txt(s, x, y, c, size, align){
+  s = String(s).toUpperCase();
+  const sc = (size||8) >= 16 ? 3 : (size||8) >= 10 ? 2 : 1;
+  const ox = alignX(s, x, sc, align), oy = Math.round(y);
+  drawText(s, ox+sc, oy+sc, sc, PAL.txtShadow);
+  drawText(s, ox, oy, sc, c || PAL.txt);
+}
+// Headline-Text mit Outline (8 Richtungen) + optionalem Versatz-Sockel
+function otxt(s, x, y, sc, c, oc, align){
+  s = String(s).toUpperCase();
+  const ox = alignX(s, x, sc, align), oy = Math.round(y);
+  const o = Math.ceil(sc/2);
+  for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++)
+    if(dx||dy) drawText(s, ox+dx*o, oy+dy*o, sc, oc);
+  drawText(s, ox, oy, sc, c);
+}
 
 const clouds = [];
-for(let i=0;i<9;i++) clouds.push({x:(hash(i)% (MAPW||1) * 37)%1600, y:12+(hash(i+50)%42), s:0.7+((hash(i+9)%10)/10)});
+for(let i=0;i<9;i++){
+  const s = 0.7+((hash(i+9)%10)/10);
+  clouds.push({x: i*190 + hash(i)%130, y: 10+(hash(i+50)%40), s, v: hash(i+3)%3,
+               w: Math.round(34*s), h: Math.round(13*s)});
+}
 
 function drawSky(){
   px(0, 0, VW, VH, PAL.sky1);
-  px(0, 0, VW, 54, PAL.sky2);
-  // Sonne
-  ctx.fillStyle = PAL.sun;
-  ctx.beginPath(); ctx.arc(272, 30, 13, 0, 7); ctx.fill();
-  px(266,24,12,12,PAL.sun);
-  // Wolken (Parallax 0.15)
-  ctx.fillStyle = '#ffffff';
+  px(0, 0, VW, 50, PAL.sky2);
+  px(0, 50, VW, 8, PAL.sky3);
+  // Sonne mit Strahlenkranz (vorgerendert)
+  ctx.drawImage(BG.sun, 253, 11);
+  // Wolken (Parallax 0.15, 3 Formen)
   for(const cl of clouds){
     const cx = ((cl.x - cam.x*0.15 + gt*3) % 1700 + 1700) % 1700 - 60;
-    if(cx < -60 || cx > VW+40) continue;
-    px(cx, cl.y, 26*cl.s, 7, '#fff'); px(cx+6, cl.y-4, 14*cl.s, 5, '#fff');
+    if(cx < -cl.w || cx > VW+40) continue;
+    ctx.drawImage(BG.clouds[cl.v], Math.round(cx), cl.y, cl.w, cl.h);
   }
-  // Huegel-Parallax
-  drawHills(0.35, 118, 34, PAL.hillFar);
-  drawHills(0.6, 136, 26, PAL.hillNear);
-}
-function drawHills(par, baseY, amp, col){
-  ctx.fillStyle = col;
-  const o = cam.x*par;
-  ctx.beginPath(); ctx.moveTo(0, VH);
-  for(let x=0; x<=VW; x+=8){
-    const w = x + o;
-    const y = baseY - amp*(0.5+0.5*Math.sin(w*0.013)) - 8*Math.sin(w*0.037);
-    ctx.lineTo(x, y);
-  }
-  ctx.lineTo(VW, VH); ctx.closePath(); ctx.fill();
+  // Huegel-Parallax: 2 vorgerenderte, nahtlos kachelnde Streifen
+  let off = (cam.x*0.35) % BGW; if(off < 0) off += BGW;
+  off = Math.round(off);
+  ctx.drawImage(BG.far, -off, 0);
+  ctx.drawImage(BG.far, BGW-off, 0);
+  off = (cam.x*0.6) % BGW; if(off < 0) off += BGW;
+  off = Math.round(off);
+  ctx.drawImage(BG.near, -off, 0);
+  ctx.drawImage(BG.near, BGW-off, 0);
 }
 
 function drawTiles(){
   const c0 = Math.max(0, Math.floor(cam.x/TILE)), c1 = Math.min(MAPW-1, Math.ceil((cam.x+VW)/TILE));
+  const camX = Math.round(cam.x), camY = Math.round(cam.y);
   for(let c=c0; c<=c1; c++){
+    const colX = c*TILE - camX;
     for(let r=0; r<MAPH; r++){
-      const t = grid[r][c];
-      const x = c*TILE - cam.x, y = r*TILE - cam.y;
-      if(t === T_GROUND){
-        const above = tileAt(c, r-1);
-        px(x, y, TILE, TILE, PAL.dirt);
-        if(hash(c*31+r*7)%5 === 0) px(x+ (hash(c+r)%12), y+4+(hash(c*3+r)%9), 2, 2, PAL.dirtDark);
-        if(above === T_EMPTY){
-          px(x, y, TILE, 5, PAL.grass);
-          px(x, y, TILE, 2, PAL.grassLip);
-          // Deko: Grashalme / Blumen
-          const h2 = hash(c*13)%10;
-          if(h2 < 3) px(x+3+h2*3, y-3, 1, 3, PAL.grassLip);
-          else if(h2 === 4){ px(x+7, y-3, 1, 3, PAL.grass); px(x+6, y-5, 3, 3, '#ff9ecb'); px(x+7, y-4, 1, 1, PAL.sun); }
-        }
-      } else if(t === T_ROCK){
-        px(x+2, y+4, 12, 12, PAL.rock);
-        px(x+4, y+2, 8, 4, PAL.rock);
-        px(x+3, y+12, 10, 4, PAL.rockDark);
-        px(x+5, y+5, 3, 2, '#c4c9cf');
-      } else if(t === T_LOG){
-        px(x, y+3, TILE, 10, PAL.log);
-        px(x, y+3, TILE, 2, PAL.logRing);
-        px(x, y+11, TILE, 2, PAL.logDark);
-        if(c%3===0){ px(x+5, y+5, 5, 5, PAL.logRing); px(x+7, y+7, 2, 2, PAL.logDark); }
-      } else if(t === T_RAMP_UP){
-        ctx.fillStyle = PAL.dirt;
-        ctx.beginPath(); ctx.moveTo(x, y+TILE); ctx.lineTo(x+TILE, y); ctx.lineTo(x+TILE, y+TILE); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = PAL.grassLip; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(x, y+TILE-1); ctx.lineTo(x+TILE, y-1); ctx.stroke();
-      } else if(t === T_RAMP_DN){
-        ctx.fillStyle = PAL.dirt;
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+TILE, y+TILE); ctx.lineTo(x, y+TILE); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = PAL.grassLip; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(x, y-1); ctx.lineTo(x+TILE, y+TILE-1); ctx.stroke();
-      } else if(t === T_DOOR){
-        px(x+2, y, 12, TILE, PAL.door);
-        px(x+4, y, 2, TILE, PAL.doorBar);
-        px(x+9, y, 2, TILE, PAL.doorBar);
-      }
+      const v = vgrid[r][c];
+      if(v < 0) continue;
+      const a = ATLAS[v];
+      ctx.drawImage(a.cv, colX + a.ox, r*TILE - camY + a.oy);
     }
   }
+}
+
+function drawCheckpoint(){
+  if(!checkpoint) return;
+  const x = Math.round(checkpoint.x - cam.x), gy = Math.round(checkpoint.y - cam.y);
+  if(x < -24 || x > VW+24) return;
+  const H = 26, act = checkpoint.active;
+  // Mast + Sockel + Knauf
+  px(x+4, gy-2, 6, 2, PAL.rockDark);
+  px(x+6, gy-H, 2, H-1, PAL.rock);
+  px(x+6, gy-H, 1, H-1, PAL.rockHi);
+  px(x+5, gy-H-2, 4, 2, act ? PAL.gold : PAL.rockDark);
+  if(act) px(x+5, gy-H-2, 1, 1, PAL.goldHi);
+  // Flagge: hisst sich beim Aktivieren hoch
+  const a = act ? Math.min(1, checkpoint.animT/0.6) : 0;
+  const fy = gy - 9 - a*(H-12);
+  const wob = act ? Math.round(Math.sin(gt*6)) : 0;
+  const c1 = act ? PAL.bow : PAL.rock, c2 = act ? PAL.bowDark : PAL.rockDark;
+  px(x+8, fy, 7, 5, c1);
+  px(x+8, fy, 7, 1, act ? PAL.bowHi : PAL.rockHi);
+  px(x+13+wob, fy+1, 2, 3, c1);
+  px(x+8, fy+4, 7, 1, c2);
+  if(act && checkpoint.animT < 1.2) txt('CHECKPOINT!', x+7, gy-H-14, '#fff', 7, 'center');
 }
 
 function drawCollectibles(){
@@ -637,16 +1155,28 @@ function drawCollectibles(){
     if(it.kind === 'salad'){
       px(x, y+1, 7, 5, PAL.salad);
       px(x+1, y, 5, 2, PAL.salad);
-      px(x+3, y+1, 1, 5, PAL.saladDark);
-      px(x+1, y+3, 2, 1, PAL.saladDark);
+      px(x+1, y+1, 2, 1, PAL.saladHi);           // Blattglanz
+      px(x+3, y+1, 1, 5, PAL.saladDark);         // Mittelader
+      px(x+1, y+3, 2, 1, PAL.saladDark);         // Seitenadern
+      px(x+5, y+2, 1, 1, PAL.saladDark);
+      px(x+4, y+4, 1, 1, PAL.saladDark);
+      // leichtes Funkeln (deterministisch)
+      if(((gt*2 + it.x*0.31) % 4) < 0.3) px(x+1+((it.x>>3)%4), y, 1, 1, '#ffffff');
     } else {
-      // Sanduhr-Splitter (Diamant)
+      // Sanduhr-Splitter (Diamant) mit Kante + wanderndem Glanzpunkt
       px(x+2, y, 3, 2, PAL.shardHi);
       px(x+1, y+2, 5, 4, PAL.shard);
       px(x, y+3, 7, 2, PAL.shard);
       px(x+2, y+6, 3, 3, PAL.shard);
       px(x+3, y+9, 1, 2, PAL.shardHi);
       px(x+2, y+2, 1, 2, PAL.shardHi);
+      px(x+5, y+5, 1, 2, PAL.shardDk);           // dunkle Facette
+      px(x+4, y+7, 1, 2, PAL.shardDk);
+      const gp = ((gt*1.4 + it.x*0.11) % 1.6);   // Glitzer wandert durch
+      if(gp < 1){
+        const gy2 = Math.floor(gp*9);
+        px(x+1+(gy2%4), y+gy2, 1, 2, '#ffffff');
+      }
     }
   }
 }
@@ -659,33 +1189,69 @@ function drawCrow(e){
   if(e.type === 'boss'){
     const fl = e.flashT > 0 && Math.floor(gt*20)%2 === 0;
     const B = fl ? '#ffffff' : PAL.crow, W = fl ? '#ffffff' : PAL.crowWing;
-    px(x, y+4, 22, 16, B);                 // Koerper
-    px(x+2, y+8-flap*2, 18, 5, W);         // Fluegel
-    px(x+(dir>0?14:0), y, 10, 9, B);       // Kopf
+    const D = fl ? '#ffffff' : PAL.crowDark;
+    const hx = dir>0 ? 14 : 0;
+    // Schwanzfedern
+    px(x+(dir>0?-4:22), y+7, 5, 3, D);
+    px(x+(dir>0?-6:26), y+8, 3, 2, B);
+    px(x, y+4, 22, 16, B);                     // Koerper
+    px(x+3, y+15, 4, 1, D);                    // Federstruktur Brust
+    px(x+9, y+17, 4, 1, D);
+    px(x+15, y+15, 4, 1, D);
+    px(x+2, y+8-flap*2, 18, 5, W);             // Fluegel (2 Frames)
+    px(x+3, y+11-flap*2, 3, 2, D);             // Federkerben
+    px(x+8, y+11-flap*2, 3, 2, D);
+    px(x+13, y+11-flap*2, 3, 2, D);
+    px(x+18, y+9-flap*2, 2, 2, D);             // Fluegelspitze
+    // Federkragen zwischen Kopf und Koerper
+    const kx = dir>0 ? 12 : 8;
+    px(x+kx, y+3, 2, 3, W); px(x+kx, y+6, 2, 3, D); px(x+kx, y+9, 2, 2, W);
+    px(x+hx, y, 10, 9, B);                     // Kopf
     px(x+(dir>0?22:-4), y+3, 4, 3, PAL.beak);
-    px(x+(dir>0?18:3), y+2, 3, 3, '#ff4444'); // boeses Auge
-    px(x+(dir>0?15:2), y-3, 3, 3, PAL.shard); // Krone
-    px(x+(dir>0?18:5), y-4, 3, 4, PAL.shard);
+    px(x+(dir>0?22:-3), y+5, 3, 1, '#c77f22'); // Schnabelschatten
+    px(x+(dir>0?18:3), y+2, 3, 3, '#ff4444');  // zorniges Auge
+    px(x+(dir>0?19:4), y+3, 1, 1, '#ffffff');  // Augen-Glanz
+    px(x+(dir>0?17:2), y, 3, 1, D);            // zornige Braue (schraeg)
+    px(x+(dir>0?19:1), y+1, 2, 1, D);
+    // GOLDENE KRONE
+    px(x+hx+1, y-3, 8, 3, PAL.gold);
+    px(x+hx+1, y-5, 2, 2, PAL.gold);
+    px(x+hx+4, y-6, 2, 3, PAL.gold);
+    px(x+hx+7, y-5, 2, 2, PAL.gold);
+    px(x+hx+1, y-5, 1, 1, PAL.goldHi);
+    px(x+hx+4, y-6, 1, 1, PAL.goldHi);
+    px(x+hx+4, y-2, 2, 1, PAL.heart);          // Rubin
     px(x+4, y+20, 3, 3, PAL.beak); px(x+14, y+20, 3, 3, PAL.beak);
     // HP-Anzeige
     for(let i=0;i<3;i++) px(x+2+i*7, y-10, 5, 4, i < e.hp ? PAL.heart : '#00000044');
   } else if(e.type === 'sleeper'){
+    px(x, y+6, 3, 2, PAL.crowDark);            // Schwanz
     px(x+1, y+3, 12, 10, PAL.crow);
     px(x+2, y+6, 10, 3, PAL.crowWing);
+    px(x+3, y+8, 2, 1, PAL.crowDark);          // Federkerben
+    px(x+7, y+8, 2, 1, PAL.crowDark);
+    px(x+3, y+11, 3, 1, PAL.crowDark);         // Brustfedern
     px(x+(e.awake?8:7), y, 7, 7, PAL.crow);
     px(x+13, y+2, 3, 2, PAL.beak);
-    if(e.awake){ px(x+11, y+1, 2, 2, '#ff4444'); }
+    if(e.awake){ px(x+11, y+1, 2, 2, '#ff4444'); px(x+11, y+1, 1, 1, '#fff'); }
     else {
       px(x+10, y+2, 3, 1, '#888'); // geschlossenes Auge
       txt('z', x+13, y-10 + Math.sin(e.t*2)*2, '#ffffffcc', 7);
     }
     px(x+3, y+13, 2, 2, PAL.beak); px(x+9, y+13, 2, 2, PAL.beak);
   } else {
-    px(x+1, y+3, 12, 9, PAL.crow);
-    px(x+2, y+5-flap, 9, 4, PAL.crowWing);
-    px(x+(dir>0?7:0), y, 7, 7, PAL.crow);
-    px(x+(dir>0?13:-2), y+2, 3, 2, PAL.beak);
-    px(x+(dir>0?10:2), y+1, 2, 2, '#ffd447');
+    const bb = flap ? 0 : 1;                   // 2-Frame-Hopser
+    px(x+(dir>0?-2:12), y+5+bb, 4, 2, PAL.crowDark); // Schwanzfedern
+    px(x+1, y+3+bb, 12, 9, PAL.crow);
+    px(x+(dir>0?9:2), y+9+bb, 3, 1, PAL.crowDark);   // Brustfedern
+    px(x+2, y+5-flap+bb, 9, 4, PAL.crowWing);
+    px(x+3, y+8-flap+bb, 2, 1, PAL.crowDark);        // Federkerben am Fluegel
+    px(x+6, y+8-flap+bb, 2, 1, PAL.crowDark);
+    px(x+9, y+7-flap+bb, 2, 2, PAL.crowDark);        // Fluegelspitze
+    px(x+(dir>0?7:0), y+bb, 7, 7, PAL.crow);
+    px(x+(dir>0?13:-2), y+2+bb, 3, 2, PAL.beak);
+    px(x+(dir>0?10:2), y+1+bb, 2, 2, '#ffd447');
+    px(x+(dir>0?11:2), y+1+bb, 1, 1, PAL.crowDark);  // Pupille
     px(x+3, y+12, 2, 2, PAL.beak); px(x+9, y+12, 2, 2, PAL.beak);
   }
 }
@@ -698,17 +1264,29 @@ function drawCage(){
   if(!cage.open){
     drawZip(x+7, y+17, 0);
   }
-  px(x-2, y+cage.h-2, cage.w+4, 3, '#b8860b');       // Sockel
-  px(x-2, y-2, cage.w+4, 3, '#b8860b');              // Deckel
-  const barCol = '#e8b83a';
+  // Sockel + verzierter Deckel (gold, zweifarbig)
+  px(x-2, y+cage.h-2, cage.w+4, 3, PAL.goldDk);
+  px(x-2, y+cage.h-2, cage.w+4, 1, PAL.gold);
+  px(x-2, y-2, cage.w+4, 3, PAL.goldDk);
+  px(x-2, y-2, cage.w+4, 1, PAL.gold);
+  px(x+cage.w/2-4, y-6, 8, 4, PAL.goldDk);          // Kuppel
+  px(x+cage.w/2-3, y-5, 6, 2, PAL.gold);
+  px(x+cage.w/2-1, y-9, 2, 3, PAL.gold);            // Knauf
+  px(x+cage.w/2-1, y-9, 1, 1, PAL.goldHi);
+  const barCol = PAL.gold;
   if(cage.open){
-    px(x, y, 2, cage.h, barCol); px(x+cage.w-2, y, 2, cage.h, barCol);
+    px(x, y, 2, cage.h, barCol); px(x, y+2, 1, 6, PAL.goldHi);
+    px(x+cage.w-2, y, 2, cage.h, barCol); px(x+cage.w-2, y+2, 1, 6, PAL.goldHi);
     // Tuer aufgeklappt
     px(x+cage.w+2, y+2, 2, cage.h-8, barCol);
   } else {
-    for(let i=0;i<=cage.w-2;i+=5) px(x+i, y, 2, cage.h, barCol);
+    for(let i=0;i<=cage.w-2;i+=5){
+      px(x+i, y, 2, cage.h, barCol);
+      px(x+i, y+2, 1, 7, PAL.goldHi);               // Glanz auf jedem Stab
+      px(x+i+1, y+cage.h-8, 1, 5, PAL.goldDk);
+    }
   }
-  txt('ZIP', x+cage.w/2, y-12, '#fff', 7, 'center');
+  txt('ZIP', x+cage.w/2, y-16, '#fff', 7, 'center');
 }
 function drawZip(x, y, hop){
   const dy = -Math.abs(Math.sin(hop))*4;
@@ -724,46 +1302,79 @@ function drawShelly(){
   const x = Math.round(P.x - cam.x), y = Math.round(P.y - cam.y);
   const cxm = x + P.w/2;
   const boardY = y + P.h - 4;
-  // Skateboard
+  // Skateboard (mit Nose/Tail-Kick und Radnaben)
+  px(cxm-11, boardY-1, 2, 2, PAL.board);
+  px(cxm+9, boardY-1, 2, 2, PAL.board);
   px(cxm-10, boardY, 20, 3, PAL.board);
   px(cxm-8, boardY, 16, 1, PAL.boardHi);
   px(cxm-7, boardY+3, 3, 2, PAL.wheel);
   px(cxm+4, boardY+3, 3, 2, PAL.wheel);
-  if(P.vx > 130){ // Speed-Linien
-    px(x-8, boardY-2, 5, 1, '#ffffff88'); px(x-12, boardY-6, 6, 1, '#ffffff66');
+  px(cxm-6, boardY+3, 1, 1, '#777');
+  px(cxm+5, boardY+3, 1, 1, '#777');
+  if(P.vx > 130){ // Speed-Linien (animiert, skaliert mit Tempo)
+    const k = (P.vx-130)/(MAX_SPD-130);
+    const off = Math.round((gt*60)%8);
+    px(x-6-off, boardY-2, 4+k*6, 1, '#ffffff88');
+    px(x-10-off, boardY-8, 5+k*7, 1, '#ffffff66');
+    px(x-4-off, boardY-13, 3+k*5, 1, '#ffffff44');
   }
   if(P.rolling){
-    // eingerollter Panzer
+    // eingerollter Panzer mit sichtbarem Spiral-Muster
     const cy = boardY - 6;
     ctx.fillStyle = PAL.shell;
     ctx.beginPath(); ctx.arc(cxm, cy, 6.5, 0, 7); ctx.fill();
     ctx.fillStyle = PAL.shellDark;
     ctx.beginPath(); ctx.arc(cxm, cy, 6.5, P.rollA, P.rollA+1.1); ctx.lineTo(cxm, cy); ctx.fill();
     ctx.beginPath(); ctx.arc(cxm, cy, 6.5, P.rollA+3.1, P.rollA+4.2); ctx.lineTo(cxm, cy); ctx.fill();
-    px(cxm-2, cy-2, 3, 3, PAL.shellHi);
+    // Spirale rotiert mit
+    for(let k=0;k<4;k++){
+      const a = P.rollA + k*1.9, rad = 2 + k*1.1;
+      px(cxm + Math.cos(a)*rad - 1, cy + Math.sin(a)*rad - 1, 2, 2, k%2 ? PAL.shellDark : PAL.shellPlate);
+    }
+    px(cxm-1, cy-1, 1, 1, PAL.shellDark);   // Nabe
+    px(cxm-2, cy-3, 3, 2, PAL.shellHi);
     px(cxm+3, cy-6, 3, 2, PAL.bow); // Schleife blitzt hervor
   } else {
     const bob = P.grounded ? Math.round(Math.sin(gt*13))* 1 : 0;
-    // Beine
-    px(x+2, boardY-3, 3, 4, PAL.bodyDark);
-    px(x+8, boardY-3, 3, 4, PAL.bodyDark);
+    const lf = P.grounded ? Math.floor(gt*12)%3 : 1;       // Paddel-Beine, 3 Frames
+    // Beine (Paddel-Animation)
+    px(x+2, boardY-3-(lf===0?1:0), 3, 4+(lf===0?1:0), PAL.bodyDark);
+    px(x+8, boardY-3-(lf===2?1:0), 3, 4+(lf===2?1:0), PAL.bodyDark);
+    // Hals + Bauchpanzer-Ton
+    px(x+9, y+8+bob, 3, 3, PAL.body);
+    px(x+2, y+13+bob, 8, 1, PAL.belly);
     // Panzer
     px(x-1, y+4+bob, 12, 9, PAL.shell);
     px(x, y+3+bob, 10, 3, PAL.shellHi);
     px(x+1, y+11+bob, 9, 2, PAL.shellDark);
-    px(x+3, y+6+bob, 3, 3, PAL.shellDark); px(x+7, y+7+bob, 2, 2, PAL.shellDark);
+    // Platten-Muster (Hexagon-Andeutung, 2 Reihen versetzt)
+    px(x+1, y+6+bob, 3, 3, PAL.shellPlate);
+    px(x+5, y+6+bob, 3, 3, PAL.shellPlate);
+    px(x+9, y+6+bob, 1, 3, PAL.shellPlate);
+    px(x+3, y+9+bob, 3, 2, PAL.shellPlate);
+    px(x+7, y+9+bob, 2, 2, PAL.shellPlate);
+    px(x+4, y+6+bob, 1, 3, PAL.shellDark);      // Naehte
+    px(x+8, y+6+bob, 1, 3, PAL.shellDark);
+    px(x+1, y+6+bob, 1, 1, PAL.shellHi);        // Plattenglanz
+    px(x+5, y+6+bob, 1, 1, PAL.shellHi);
     // Kopf (nach rechts)
     px(x+9, y+1+bob, 7, 7, PAL.body);
-    px(x+13, y+3+bob, 2, 2, '#fff'); px(x+14, y+3+bob, 1, 2, '#123');
-    px(x+11, y+6+bob, 3, 1, PAL.bodyDark); // Laecheln
-    // rosa Schleife
+    px(x+13, y+3+bob, 2, 2, '#fff');            // Auge
+    px(x+14, y+3+bob, 1, 2, '#123');            // Pupille
+    px(x+14, y+3+bob, 1, 1, '#cfeaff');         // Augen-Highlight
+    px(x+10, y+5+bob, 2, 1, PAL.bowHi);         // Wange
+    px(x+11, y+6+bob, 3, 1, PAL.bodyDark);      // Laecheln
+    // rosa Schleife (2 Toene)
     px(x, y+bob, 3, 3, PAL.bow); px(x+4, y+bob, 3, 3, PAL.bow);
+    px(x, y+bob, 3, 1, PAL.bowHi); px(x+4, y+bob, 3, 1, PAL.bowHi);
     px(x+3, y+1+bob, 1, 1, PAL.bowDark);
-    // Paddel-Arm (Animation nach Tipp)
+    px(x+1, y+2+bob, 1, 1, PAL.bowDark); px(x+5, y+2+bob, 1, 1, PAL.bowDark);
+    // Paddel-Arm (3-Frame-Animation nach Tipp)
     const pd = gt - P.paddleT;
-    if(pd < 0.28){
-      const sw = Math.sin(pd/0.28*Math.PI);
-      px(x+4, y+9+bob+sw*4, 3, 5, PAL.body);
+    if(pd < 0.3){
+      if(pd < 0.1){ px(x+6, y+7+bob, 4, 3, PAL.body); px(x+9, y+6+bob, 2, 2, PAL.body); }
+      else if(pd < 0.2){ px(x+6, y+10+bob, 5, 3, PAL.body); }
+      else { px(x+5, y+12+bob, 3, 4, PAL.body); px(x+7, y+14+bob, 3, 2, PAL.body); }
     } else {
       px(x+5, y+11+bob, 3, 3, PAL.body);
     }
@@ -777,37 +1388,74 @@ function drawParticles(){
 function drawHints(){
   for(const h of HINTS){
     const x = h.x - cam.x;
-    if(x < -180 || x > VW+40) continue;
-    txt(h.t, x, h.y - cam.y, '#1d5c2a', 7);
+    if(x < -220 || x > VW+40) continue;
+    txt(h.t, x, h.y - cam.y, '#ffffff', 7);
   }
 }
 
 function drawHeart(x, y, full){
-  const c = full ? PAL.heart : '#00000033', c2 = full ? PAL.heartDark : '#00000033';
-  px(x, y, 3, 2, c); px(x+4, y, 3, 2, c);
-  px(x, y+2, 7, 2, c);
-  px(x+1, y+4, 5, 2, c2);
-  px(x+2, y+6, 3, 1, c2);
+  if(full){
+    px(x, y, 3, 2, PAL.heart); px(x+4, y, 3, 2, PAL.heart);
+    px(x, y+2, 7, 2, PAL.heart);
+    px(x+1, y+4, 5, 2, PAL.heartDark);
+    px(x+2, y+6, 3, 1, PAL.heartDark);
+    px(x+1, y+1, 1, 1, '#ffc2c9');                    // Glanzpunkt
+  } else {
+    px(x, y, 3, 2, '#00000055'); px(x+4, y, 3, 2, '#00000055');
+    px(x, y+2, 7, 2, '#00000055');
+    px(x+1, y+4, 5, 2, '#00000044');
+    px(x+2, y+6, 3, 1, '#00000044');
+  }
+}
+function hudPanel(x, y, w, h){                        // abgedunkelte Flaeche mit Pixel-Rundung
+  ctx.fillStyle = 'rgba(12,28,22,0.5)';
+  ctx.fillRect(x+1, y, w-2, h);
+  ctx.fillRect(x, y+1, w, h-2);
+}
+function drawMuteIcon(){
+  const x = VW-16, y = VH-14;
+  hudPanel(x-2, y-2, 16, 13);
+  px(x, y+3, 2, 3, '#fff'); px(x+2, y+2, 1, 5, '#fff');   // Lautsprecher
+  px(x+3, y+1, 2, 7, '#fff');
+  if(AU.muted){
+    px(x+6, y+2, 1, 1, PAL.heart); px(x+7, y+3, 1, 1, PAL.heart);
+    px(x+8, y+4, 1, 1, PAL.heart); px(x+7, y+5, 1, 1, PAL.heart);
+    px(x+6, y+6, 1, 1, PAL.heart); px(x+8, y+2, 1, 1, PAL.heart);
+    px(x+6, y+4, 1, 1, PAL.heart); px(x+8, y+6, 1, 1, PAL.heart);
+  } else {
+    px(x+6, y+3, 1, 3, '#7ed957');                        // Schallwellen
+    px(x+8, y+2, 1, 5, '#7ed957');
+  }
 }
 function drawHUD(){
-  for(let i=0;i<3;i++) drawHeart(6+i*10, 6, i < hearts);
-  // Salat-Zaehler
-  px(6, 17, 7, 5, PAL.salad); px(7, 16, 5, 2, PAL.salad); px(9, 17, 1, 5, PAL.saladDark);
-  txt('x'+saladCount, 16, 15, '#fff', 8);
-  // Splitter
+  // linkes Panel: Herzen + Salat
+  hudPanel(3, 3, 42, 22);
+  for(let i=0;i<3;i++) drawHeart(7+i*10, 6, i < hearts);
+  px(7, 15, 7, 5, PAL.salad); px(8, 14, 5, 2, PAL.salad);
+  px(8, 15, 2, 1, PAL.saladHi); px(10, 15, 1, 5, PAL.saladDark);
+  txt('X'+saladCount, 17, 15, '#fff', 8);
+  // rechtes Panel: Sanduhr-Splitter (fuellen sich von links)
+  hudPanel(VW-44, 3, 41, 14);
   for(let i=0;i<3;i++){
-    const x = VW-14-i*11, got = i < shardCount;
-    px(x+1, 6, 4, 2, got?PAL.shardHi:'#00000033');
-    px(x, 8, 6, 4, got?PAL.shard:'#00000033');
-    px(x+1, 12, 4, 2, got?PAL.shard:'#00000033');
+    const x = VW-40+i*12, on = i < shardCount;
+    px(x+1, 5, 4, 2, on?PAL.shardHi:'#00000055');
+    px(x, 7, 6, 4, on?PAL.shard:'#00000055');
+    px(x+1, 11, 4, 2, on?PAL.shard:'#00000055');
+    if(on) px(x+1, 7, 1, 2, PAL.shardHi);
   }
 }
 
 function panel(w, h){
   const x = (VW-w)/2, y = (VH-h)/2;
-  px(x-2, y-2, w+4, h+4, '#2e4a2e');
-  px(x, y, w, h, '#f7efd2');
-  px(x, y, w, 3, '#e0d3a8');
+  px(x-3, y-3, w+6, h+6, '#1f3a24');       // dunkler Aussenrand
+  px(x-1, y-1, w+2, h+2, PAL.gold);        // goldene Linie
+  px(x, y, w, h, '#f7efd2');               // Papier
+  px(x, y, w, 2, '#fffbe8');               // Licht oben
+  px(x, y+h-3, w, 3, '#e0d3a8');           // Kante unten
+  px(x+2, y+2, 2, 2, PAL.gold);            // Eck-Nieten
+  px(x+w-4, y+2, 2, 2, PAL.gold);
+  px(x+2, y+h-4, 2, 2, PAL.gold);
+  px(x+w-4, y+h-4, 2, 2, PAL.gold);
   return {x, y};
 }
 
@@ -820,20 +1468,38 @@ function drawTitle(){
   drawSky();
   // Boden-Streifen
   px(0, 150, VW, 30, PAL.grass); px(0, 150, VW, 3, PAL.grassLip);
-  txt('SHELLY', VW/2, 24, '#2e7d32', 22, 'center');
-  txt('ON THE RUN!', VW/2, 48, '#e04a3a', 18, 'center');
-  txt('Ein Panzer. Ein Board. Keine Gnade.', VW/2, 76, '#3a5566', 8, 'center');
+  // Logo: Extrusions-Sockel + Outline, leichtes Schweben
+  const bob = Math.round(Math.sin(gt*1.8)*1.5);
+  otxt('SHELLY', VW/2, 20+bob+3, 4, '#1c4a26', '#1c4a26', 'center');   // Sockel
+  otxt('SHELLY', VW/2, 20+bob, 4, '#7ed957', '#1c4a26', 'center');
+  otxt('ON THE RUN!', VW/2, 52+bob+2, 2, '#7c1f14', '#7c1f14', 'center');
+  otxt('ON THE RUN!', VW/2, 52+bob, 2, '#ff8a70', '#7c1f14', 'center');
+  txt('Ein Panzer. Ein Board. Keine Gnade.', VW/2, 76, '#2b4456', 8, 'center');
   // grosse Shelly
   const ox = VW/2-10, oy = 108;
   px(ox-14, oy+22, 40, 5, PAL.board); px(ox-10, oy+22, 32, 2, PAL.boardHi);
   px(ox-8, oy+27, 5, 4, PAL.wheel); px(ox+14, oy+27, 5, 4, PAL.wheel);
   px(ox-8, oy+2, 24, 16, PAL.shell); px(ox-6, oy, 20, 5, PAL.shellHi);
+  // Platten-Muster
+  px(ox-5, oy+5, 6, 6, PAL.shellPlate); px(ox+3, oy+5, 6, 6, PAL.shellPlate);
+  px(ox+11, oy+5, 4, 6, PAL.shellPlate);
+  px(ox-1, oy+11, 6, 5, PAL.shellPlate); px(ox+7, oy+11, 6, 5, PAL.shellPlate);
+  px(ox+1, oy+5, 2, 11, PAL.shellDark); px(ox+9, oy+5, 2, 11, PAL.shellDark);
+  px(ox-8, oy+15, 24, 3, PAL.shellDark);
+  px(ox-8, oy+18, 22, 2, PAL.belly);
+  // Kopf
   px(ox+12, oy-4, 13, 13, PAL.body);
   px(ox+19, oy-1, 4, 4, '#fff'); px(ox+21, oy-1, 2, 4, '#123');
-  px(ox-6, oy-6, 6, 6, PAL.bow); px(ox+2, oy-6, 6, 6, PAL.bow); px(ox, oy-4, 2, 2, PAL.bowDark);
+  px(ox+21, oy-1, 1, 1, '#cfeaff');
+  px(ox+14, oy+3, 3, 2, PAL.bowHi);
+  // Schleife (2 Toene)
+  px(ox-6, oy-6, 6, 6, PAL.bow); px(ox+2, oy-6, 6, 6, PAL.bow);
+  px(ox-6, oy-6, 6, 2, PAL.bowHi); px(ox+2, oy-6, 6, 2, PAL.bowHi);
+  px(ox, oy-4, 2, 2, PAL.bowDark);
   px(ox-4, oy+18, 5, 5, PAL.bodyDark); px(ox+6, oy+18, 5, 5, PAL.bodyDark);
-  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder LEERTASTE', VW/2, 158, '#fff', 9, 'center');
-  txt('PROTOTYP v0.1 - WELT 1: WIESENTAL', VW/2, 170, '#ffffff99', 6, 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder LEERTASTE', VW/2, 156, '#fff', 9, 'center');
+  txt('PROTOTYP v0.3 - WELT 1: WIESENTAL', VW/2, 169, '#ffffffaa', 6, 'center');
+  drawMuteIcon();
 }
 
 function drawIntro(){
@@ -856,34 +1522,44 @@ function drawIntro(){
 }
 
 function drawGameOver(){
-  px(0, 0, VW, VH, 'rgba(20,15,35,0.75)');
-  txt('MIST!', VW/2, 48, '#ff5a6a', 22, 'center');
+  px(0, 0, VW, VH, 'rgba(20,15,35,0.78)');
+  otxt('MIST!', VW/2, 42, 3, '#ff5a6a', '#4a0f18', 'center');
   txt('Corvos Kraehen lachen dich aus...', VW/2, 80, '#ddd', 8, 'center');
   txt('"Zu langsam! Kraah!"', VW/2, 94, '#aaa', 8, 'center');
   if(Math.floor(gt*1.6)%2===0) txt('TIPPEN = Nochmal versuchen', VW/2, 130, '#fff', 9, 'center');
 }
 
+function drawPause(){
+  px(0, 0, VW, VH, 'rgba(20,30,40,0.62)');
+  otxt('PAUSE', VW/2, 58, 3, '#ffffff', '#20303c', 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('Tippen zum Weiterspielen', VW/2, 96, '#ddd', 9, 'center');
+}
+
 function drawWin(){
-  px(0, 0, VW, VH, 'rgba(20,40,25,0.72)');
-  txt('GERETTET!', VW/2, 30, '#7ed957', 22, 'center');
-  drawZip(VW/2-6, 60, gt*5);
-  txt('"Danke Shelly! Du bist die Schnellste', VW/2, 82, '#eee', 8, 'center');
-  txt('von allen - auf deine Art!"', VW/2, 93, '#eee', 8, 'center');
-  txt('Salat: ' + saladCount + ' / ' + totalSalad, VW/2, 114, '#8fe14f', 9, 'center');
-  txt('Splitter: ' + shardCount + ' / ' + totalShards, VW/2, 126, PAL.shard, 9, 'center');
-  txt('Zeit: ' + fmtTime(playT), VW/2, 138, '#fff', 9, 'center');
-  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN = Zurueck zum Titel', VW/2, 160, '#fff', 8, 'center');
+  px(0, 0, VW, VH, 'rgba(20,40,25,0.75)');
+  otxt('GERETTET!', VW/2, 26, 3, '#7ed957', '#173a1f', 'center');
+  drawZip(VW/2-6, 58, gt*5);
+  txt('"Danke Shelly! Du bist die Schnellste', VW/2, 80, '#eee', 8, 'center');
+  txt('von allen - auf deine Art!"', VW/2, 91, '#eee', 8, 'center');
+  // Statistik-Zeilen mit Trennlinie
+  px(VW/2-70, 106, 140, 1, '#ffffff33');
+  txt('Salat: ' + saladCount + ' / ' + totalSalad, VW/2, 113, '#8fe14f', 9, 'center');
+  txt('Splitter: ' + shardCount + ' / ' + totalShards, VW/2, 125, PAL.shard, 9, 'center');
+  txt('Zeit: ' + fmtTime(playT), VW/2, 137, '#fff', 9, 'center');
+  px(VW/2-70, 149, 140, 1, '#ffffff33');
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN = Zurueck zum Titel', VW/2, 158, '#fff', 8, 'center');
 }
 
 function render(){
   if(state === 'title'){ drawTitle(); return; }
-  if(state === 'intro'){ drawIntro(); return; }
+  if(state === 'intro'){ drawIntro(); drawMuteIcon(); return; }
 
   // Welt (auch als Hintergrund fuer Overlays)
   ctx.save();
   if(cam.shake > 0) ctx.translate((Math.random()-0.5)*cam.shake, (Math.random()-0.5)*cam.shake);
   drawSky();
   drawTiles();
+  drawCheckpoint();
   drawCage();
   drawCollectibles();
   for(const e of enemies) if(e.alive) drawCrow(e);
@@ -892,11 +1568,18 @@ function render(){
   drawParticles();
   drawHints();
   ctx.restore();
+  // sanfter Screen-Flash beim Splitter
+  if(flashT > 0){
+    ctx.fillStyle = 'rgba(255,255,255,' + Math.min(0.55, flashT*3.2).toFixed(3) + ')';
+    ctx.fillRect(0, 0, VW, VH);
+  }
   drawHUD();
 
   if(state === 'gameover') drawGameOver();
   else if(state === 'win') drawWin();
-  else if(state === 'rescue') txt('ZIP IST FREI!', VW/2, 40, '#fff', 12, 'center');
+  else if(state === 'pause') drawPause();
+  else if(state === 'rescue') otxt('ZIP IST FREI!', VW/2, 38, 2, PAL.goldHi, '#5c3a06', 'center');
+  drawMuteIcon();
 }
 
 // ============================================================
@@ -919,6 +1602,7 @@ function resize(){
 }
 addEventListener('resize', resize);
 
+makeAtlas(); buildBG();
 buildLevel(); buildHints(); resetEnemies();
 respawnPlayer(); P.invulnT = 0;
 resize();
@@ -927,7 +1611,8 @@ requestAnimationFrame(loop);
 // Debug-Zugriff (Prototyp)
 window.G = { P, get state(){return state;}, set state(s){state=s;}, get grid(){return grid;},
   get enemies(){return enemies;}, get hearts(){return hearts;}, cam, startRun,
-  get collectibles(){return collectibles;}, get cage(){return cage;} };
+  get collectibles(){return collectibles;}, get cage(){return cage;},
+  get checkpoint(){return checkpoint;} };
 </script>
 </body>
 </html>

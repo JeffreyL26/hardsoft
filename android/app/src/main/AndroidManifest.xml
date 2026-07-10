@@ -34,4 +34,6 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Haptik bei Treffern, Splittern und Checkpoints (navigator.vibrate) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>
