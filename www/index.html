@@ -57,7 +57,10 @@ const PAL = {
   dust1:'#cbb491', dust2:'#e8dcbb', flower:'#ff9ecb',
   // Pilz-Sprungfeder (Welt 2)
   shroomCap:'#d1495b', shroomCapDk:'#a12e42', shroomCapHi:'#ef7a86',
-  shroomStem:'#e8d5b0', shroomStemDk:'#c4ae85'
+  shroomStem:'#e8d5b0', shroomStemDk:'#c4ae85',
+  // Eis (Welt 3) + Schneefall-Flag (Theme setzt snow:true)
+  ice:'#bfe6f5', iceHi:'#eafaff', iceDk:'#8fc4dd', iceDeep:'#6da8c8',
+  snow:false
 };
 const PAL_BASE = Object.assign({}, PAL);   // Grundwerte fuer Level-Themes sichern
 
@@ -91,6 +94,7 @@ const SEGS1 = [
     10: G(26), 11: G(26)
   }),
   seg('gap1', 18, {
+    5:  d(7)+'*',
     7:  d(6)+'sss',
     10: G(6)+d(3)+G(9), 11: G(6)+d(3)+G(9)
   }),
@@ -100,6 +104,7 @@ const SEGS1 = [
     10: G(26), 11: G(26)
   }),
   seg('ramp1', 30, {
+    5:  d(14)+'*',
     7:  d(13)+'sss'+d(7)+'sss',
     8:  d(7)+'sss'+d(1)+'/'+G(5)+'\\',
     9:  d(5)+'/'+G(12)+'\\',
@@ -119,7 +124,7 @@ const SEGS1 = [
   }),
   seg('sleep', 26, {
     8:  d(5)+'===='+d(8)+'====',
-    9:  d(10)+'z'+d(2)+'s'+d(1)+'z',
+    9:  d(10)+'z'+d(2)+'*'+d(1)+'z',
     10: G(26), 11: G(26)
   }),
   seg('gap2', 22, {
@@ -139,19 +144,20 @@ const SEGS1 = [
     10: G(19)+d(4)+G(3), 11: G(19)+d(4)+G(3)
   }),
   seg('arena', 30, {
-    4:  d(26)+'D', 5: d(26)+'D', 6: d(26)+'D',
+    4:  d(10)+'*'+d(8)+'*'+d(6)+'D', 5: d(26)+'D', 6: d(26)+'D',
     7:  d(26)+'D', 8: d(26)+'D',
     9:  d(14)+'B'+d(11)+'D',
     10: G(30), 11: G(30)
   }),
   seg('finale', 22, {
     0: d(20)+'##', 1: d(20)+'##', 2: d(20)+'##', 3: d(20)+'##',
-    4: d(20)+'##', 5: d(20)+'##', 6: d(20)+'##', 7: d(20)+'##',
+    4: d(20)+'##', 5: d(20)+'##', 6: d(6)+'*'+d(13)+'##', 7: d(20)+'##',
     8: d(20)+'##',
     9: d(3)+'ssssss'+d(5)+'Z'+d(5)+'##',
     10: G(22), 11: G(22)
   })
 ];
+const S1 = {}; SEGS1.forEach(s => S1[s.name] = s);   // Segment-Lookup fuer die Level-Schnitte
 
 // ------------------------------------------------------------
 // WELT 2: PILZWALD – ein 96x22-Streifen mit 3 Etagen.
@@ -188,15 +194,133 @@ const SEGS2 = [
   }, 22)
 ];
 
+const S2 = SEGS2[0];   // das grosse Pilzwald-Finale-Segment
+
 // ------------------------------------------------------------
-// LEVEL-/WELTSTRUKTUR
+// ZUSATZ-SEGMENTE fuer die Level-Schnitte (Welt 1) und die
+// neuen Level. Segmente sind reine Daten -> mehrfach nutzbar.
 // ------------------------------------------------------------
-const LEVELS = [
+const SEG_START2 = seg('start2', 12, { 9: d(2)+'P'+d(4)+'sss', 10: G(12), 11: G(12) });
+const SEG_START3 = seg('start3', 10, { 9: d(2)+'P', 10: G(10), 11: G(10) });
+const SEG_END1   = seg('endflag', 14, { 9: d(3)+'sss'+d(4)+'F', 10: G(14), 11: G(14) });
+
+// WELT 2-1 "SPORENPFAD" (h=12, Pendel: unten hin, oben zurueck)
+const SEGS_W21 = [
+  seg('sp', 76, {
+    0:  d(74)+G(2),
+    1:  d(74)+G(2),
+    2:  d(72)+'*'+d(1)+G(2),                                   // Splitter im Feder-Aufstieg
+    3:  d(74)+G(2),
+    4:  d(6)+'F'+d(9)+'c'+d(13)+'*'+d(43)+G(2),                // Flagge + Wache + Splitter oben
+    5:  d(4)+G(16)+d(3)+G(21)+d(3)+G(25)+d(2)+G(2),            // obere Route (Luecken 20-22, 44-46)
+    6:  d(74)+G(2),
+    7:  d(74)+G(2),
+    8:  d(30)+'======'+d(37)+'M'+G(2),                         // Roll-Tunnel + Feder-Pilz an der Wand
+    9:  d(1)+'P'+'sss'+d(27)+'*'+d(7)+'z'+d(20)+'sss'+d(9)+'M'+G(2),
+    10: G(76), 11: G(76)
+  })
+];
+
+// WELT 2-2 "HOCH HINAUS" (h=18, zwei Etagen + Turm-Feder)
+const SEGS_W22 = [
+  seg('hh', 54, {
+    4:  d(52)+G(2),
+    5:  d(52)+G(2),
+    6:  d(8)+'*'+d(43)+G(2),
+    7:  d(52)+G(2),
+    8:  d(52)+G(2),
+    9:  d(3)+'F'+d(8)+'sss'+d(13)+'z'+d(11)+'sss'+d(2)+'*'+d(6)+G(2),
+    10: d(4)+G(16)+d(3)+G(11)+d(3)+G(13)+d(2)+G(2),            // E2-Band (Luecken 20-22, 34-36)
+    11: d(52)+G(2),
+    12: d(52)+G(2),
+    13: d(52)+G(2),
+    14: d(26)+'======'+d(19)+'M'+G(2),                         // Log-Tunnel + Turm-Feder
+    15: d(8)+'sss'+d(17)+'*'+d(4)+'z'+d(10)+'sss'+d(4)+'M'+G(2),
+    16: G(54), 17: G(54)
+  }, 18)
+];
+// P fuer 2-2 kommt aus einem Mini-Start davor:
+const SEG_START_HH = seg('hhstart', 8, { 15: d(2)+'P', 16: G(8), 17: G(8) }, 18);
+
+// WELT 3-1 "GLATTEIS" (h=12, Eis-Tutorial)
+const SEGS_W31 = [
+  seg('s31a', 16, {
+    9:  d(1)+'*'+d(1)+'P'+d(4)+'R'+d(2)+'sss',
+    10: G(16), 11: G(16)
+  }),
+  seg('s31b', 26, {
+    7:  d(22)+'sss',
+    9:  d(8)+'sss'+d(4)+'sss',
+    10: G(4)+'I'.repeat(18)+d(4),
+    11: G(22)+d(4)
+  }),
+  seg('s31c', 26, {
+    5:  d(10)+'*',
+    9:  d(10)+'c'+d(5)+'sss'+d(2)+'R',
+    10: 'I'.repeat(26), 11: G(26)
+  }),
+  seg('s31d', 24, {
+    6:  d(15)+'*',
+    7:  d(6)+'sss',
+    10: 'I'.repeat(14)+d(4)+'IIIIII',
+    11: G(14)+d(4)+G(6)
+  }),
+  seg('s31e', 16, {
+    9:  d(4)+'z'+d(3)+'sss'+d(2)+'F',
+    10: 'I'.repeat(16), 11: G(16)
+  })
+];
+
+// WELT 3-2 "KLIPPENRUTSCHE" (h=12, Rampen + Eis-Speed + grosse Luecken)
+const SEGS_W32 = [
+  seg('s32a', 14, { 9: d(2)+'P'+d(3)+'sss', 10: G(14), 11: G(14) }),
+  seg('s32b', 30, {
+    6:  d(27)+'*',
+    7:  d(10)+'sss',
+    8:  d(9)+'/'+G(4)+'\\',
+    9:  d(4)+'/'+G(10)+'\\',
+    10: G(16)+'I'.repeat(10)+d(4),
+    11: G(26)+d(4)
+  }),
+  seg('s32c', 30, {
+    6:  d(21)+'*',
+    8:  d(2)+'sss'+d(8)+'c',
+    9:  d(5)+'z'+d(4)+'/'+G(6)+'\\',
+    10: 'I'.repeat(10)+G(8)+'I'.repeat(7)+d(5),
+    11: G(25)+d(5)
+  }),
+  seg('s32d', 20, {
+    9:  d(4)+'sss'+d(3)+'*'+d(4)+'F',
+    10: 'I'.repeat(12)+G(8), 11: G(20)
+  })
+];
+
+// WELT 3-3 "FROSTGIPFEL" (h=18, Eis-Etage mit Schleich-Rutsche + Poppy)
+const SEGS_W33 = [
+  seg('fg', 54, {
+    4:  d(52)+G(2),
+    5:  d(52)+G(2),
+    6:  d(8)+'*'+d(43)+G(2),
+    7:  d(52)+G(2),
+    8:  d(52)+G(2),
+    9:  d(4)+'Z'+d(5)+'sss'+d(4)+'z'+d(6)+'sss'+d(4)+'z'+d(6)+'sss'+d(4)+'*'+d(6)+G(2),
+    10: d(2)+'I'.repeat(48)+d(2)+G(2),                         // Eis-Band oben (leise rollen!)
+    11: d(30)+'*'+d(21)+G(2),
+    12: d(51)+'M'+G(2),
+    13: d(51)+'M'+G(2),
+    14: d(2)+'P'+d(5)+'sss'+d(3)+'R'+d(7)+'c'+d(5)+'sss'+d(3)+'R'+d(7)+'c'+d(9)+G(2),
+    15: 'I'.repeat(52)+G(2),
+    16: G(54), 17: G(54)
+  }, 18)
+];
+
+// ------------------------------------------------------------
+// WELT-/LEVELSTRUKTUR: 3 Welten x 3 Level
+// ------------------------------------------------------------
+const WORLDS = [
   {
-    name:'WIESENTAL', sub:'WELT 1', maph:12, segs:SEGS1,
-    checkpoint:{seg:'sleep', col:2, gy:10*TILE},
-    buddy:'ZIP', buddyC1:'#8ee000', buddyC2:'#6cb400', buddyTail:false,
-    theme:{},
+    sub:'WELT 1', name:'WIESENTAL', theme:{},
+    buddy:'ZIP', buddyC1:'#8ee000', buddyC2:'#6cb400', buddyKind:'gecko',
     intro:{
       head:'DAS TAL DER TIERE',
       lines:[
@@ -211,19 +335,23 @@ const LEVELS = [
       tips:['TIPPEN = Paddeln + Springen', 'HALTEN / RUNTER = Panzer-Roll']
     },
     win:['"Danke Shelly! Du bist die Schnellste', 'von allen - auf deine Art!"'],
-    hints:[
-      ['start',   5,  86, 'TIPPEN = PADDEL-SPRUNG'],
-      ['logs',    4,  70, 'HALTEN = EINROLLEN'],
-      ['ramp1',  10,  60, 'BERGAB ROLLEN = SPEED!'],
-      ['sleep',   6,  66, 'PSST! LEISE VORBEIROLLEN'],
-      ['guard2',  6,  60, 'TIPP BEIM AUFPRALL = HOHER BOUNCE'],
-      ['arena',   4,  60, 'DIE WACHE! 3x DRAUFSPRINGEN']
+    levels:[
+      { name:'AUFBRUCH', maph:12, segs:[S1.start, S1.rocks, S1.gap1, S1.logs, S1.ramp1, SEG_END1],
+        checkpoint:null,
+        hints:[['start',5,86,'TIPPEN = PADDEL-SPRUNG'], ['logs',4,70,'HALTEN = EINROLLEN'],
+               ['ramp1',10,60,'BERGAB ROLLEN = SPEED!']] },
+      { name:'WACHPOSTEN', maph:12, segs:[SEG_START2, S1.guard1, S1.plats, S1.sleep, S1.gap2, S1.guard2, S1.ramprun, SEG_END1],
+        checkpoint:{seg:'sleep', col:2, gy:10*TILE},
+        hints:[['sleep',6,66,'PSST! LEISE VORBEIROLLEN'],
+               ['guard2',6,60,'TIPP BEIM AUFPRALL = HOHER BOUNCE']] },
+      { name:'CORVOS WACHE', maph:12, segs:[SEG_START3, S1.arena, S1.finale],
+        checkpoint:null,
+        hints:[['arena',4,60,'DIE WACHE! 3x DRAUFSPRINGEN'],
+               ['arena',12,44,'HOHER BOUNCE = SPLITTER!']] }
     ]
   },
   {
-    name:'PILZWALD', sub:'WELT 2', maph:22, segs:SEGS2,
-    checkpoint:{seg:'w2', col:20, gy:14*TILE},
-    buddy:'NIO', buddyC1:'#e8963a', buddyC2:'#b5661e', buddyTail:true,
+    sub:'WELT 2', name:'PILZWALD',
     theme:{
       sky1:'#8fa8e0', sky2:'#b8c4ee', sky3:'#a3b3e6',
       hillFar:'#5e8f5a', hillFarHi:'#72a56b',
@@ -235,6 +363,7 @@ const LEVELS = [
       bush:'#3d7a4a', bushHi:'#5c9c62', bushDk:'#2c5c38',
       flower:'#d17ae0'
     },
+    buddy:'NIO', buddyC1:'#e8963a', buddyC2:'#b5661e', buddyKind:'squirrel',
     intro:{
       head:'DER PILZWALD',
       lines:[
@@ -249,40 +378,103 @@ const LEVELS = [
       tips:['PILZE = SPRUNGFEDERN', 'WAENDE = PANZER-KICKTURN']
     },
     win:['"Krass, Shelly! Du bist ja hoeher', 'geklettert als jedes Eichhoernchen!"'],
-    hints:[
-      ['w2',  4, 272, 'WAENDE DREHEN DICH UM: KICKTURN!'],
-      ['w2', 34, 250, 'LOCH = ABGRUND!'],
-      ['w2', 74, 268, 'SPRING AN DIE WAND - PILZ FAENGT DICH!'],
-      ['w2', 52, 178, 'LOECHER OBEN = NUR UMWEG'],
-      ['w2', 16, 178, 'SPRING AN DIE WAND!'],
-      ['w2', 36,  82, 'BOING ZUM SPLITTER!']
+    levels:[
+      { name:'SPORENPFAD', maph:12, segs:SEGS_W21,
+        checkpoint:null,
+        hints:[['sp',14,120,'WAENDE DREHEN DICH UM'], ['sp',58,120,'SPRING AN DIE WAND!'],
+               ['sp',48,44,'OBEN GEHT ES ZURUECK']] },
+      { name:'HOCH HINAUS', maph:18, segs:[SEG_START_HH, ...SEGS_W22],
+        checkpoint:null,
+        hints:[['hh',38,210,'SPRING AN DIE WAND!'], ['hh',30,130,'LOECHER = NUR UMWEG']] },
+      { name:'NIOS KAEFIG', maph:22, segs:SEGS2,
+        checkpoint:{seg:'w2', col:20, gy:14*TILE},
+        hints:[['w2',4,272,'STEINE = KICKTURN!'], ['w2',34,250,'LOCH = ABGRUND!'],
+               ['w2',74,268,'SPRING AN DIE WAND!'], ['w2',52,178,'LOECHER OBEN = NUR UMWEG'],
+               ['w2',36,82,'BOING ZUM SPLITTER!']] }
+    ]
+  },
+  {
+    sub:'WELT 3', name:'FROSTKLIPPEN',
+    theme:{
+      sky1:'#a8d4ec', sky2:'#d4ecf7', sky3:'#c0e0f0',
+      hillFar:'#cfe3ee', hillFarHi:'#e8f4fa',
+      hillNear:'#a5c8dc', hillNearHi:'#c2dcea',
+      treeFar:'#4a7a6e', treeFarDk:'#3c665c',
+      grass:'#dfeef6', grassLip:'#ffffff', grassDk:'#b0cfe0',
+      dirt:'#5c718a', dirtMid:'#4a5d75', dirtDeep:'#3a4a60', dirtDeep2:'#2c3a4d',
+      pebble:'#8ba3b8', pebbleHi:'#b8cddb',
+      bush:'#5c8a7e', bushHi:'#7aa89c', bushDk:'#44685f',
+      flower:'#9ad7ff',
+      snow:true
+    },
+    buddy:'POPPY', buddyC1:'#f2f2f7', buddyC2:'#c9c9da', buddyKind:'bunny',
+    intro:{
+      head:'DIE FROSTKLIPPEN',
+      lines:[
+        'Hoch oben im Eis zittert POPPY',
+        'die Haesin in Corvos Kaefig.',
+        'Der Boden? Spiegelglatt.',
+        '',
+        'Auf Eis bleibt dein Schwung -',
+        'aber bremsen kannst du kaum.',
+        'Rette POPPY!'
+      ],
+      tips:['EIS = SCHWUNG BLEIBT', 'ROLLEN + FEDERN WIE GEHABT']
+    },
+    win:['"D-danke Shelly! Du bist die', 'coolste Schildkroete der Welt!"'],
+    levels:[
+      { name:'GLATTEIS', maph:12, segs:SEGS_W31,
+        checkpoint:{seg:'s31c', col:2, gy:10*TILE},
+        hints:[['s31a',4,120,'EIS: SCHWUNG BLEIBT!'], ['s31b',8,110,'MIT SPEED UEBER DIE LUECKE'],
+               ['s31c',12,100,'BOUNCE AUF DIE WACHE!']] },
+      { name:'KLIPPENRUTSCHE', maph:12, segs:SEGS_W32,
+        checkpoint:{seg:'s32c', col:1, gy:10*TILE},
+        hints:[['s32b',6,100,'ROLLE BERGAB + EIS = TURBO'], ['s32c',18,100,'SPRING AM EISRAND AB!']] },
+      { name:'FROSTGIPFEL', maph:18, segs:SEGS_W33,
+        checkpoint:{seg:'fg', col:46, gy:10*TILE},
+        hints:[['fg',40,200,'SPRING AN DIE WAND!'], ['fg',36,120,'ROLLE LEISE UEBERS EIS'],
+               ['fg',10,120,'POPPY WARTET LINKS!']] }
     ]
   }
 ];
-let curLevel = 0, selIdx = 0;
-const beaten = LEVELS.map(() => false);   // In-Memory-Fortschritt (kein localStorage)
+let curWorld = 0, curLvl = 0, selW = 0, selL = 0;
+// In-Memory-Fortschritt (kein localStorage): done + beste Splitter-Zahl je Level
+const prog = WORLDS.map(w => w.levels.map(() => ({done:false, best:0})));
+const seenIntro = WORLDS.map(() => false);
+function isUnlocked(w, l){
+  if(l > 0) return prog[w][l-1].done;
+  if(w === 0) return true;
+  const pw = prog[w-1];
+  return pw[pw.length-1].done;
+}
+function worldDone(w){ return prog[w].every(p => p.done); }
+function markDone(){
+  const p = prog[curWorld][curLvl];
+  p.done = true;
+  p.best = Math.max(p.best, shardCount);
+}
 
 // Tile-Codes
-const T_EMPTY=0, T_GROUND=1, T_ROCK=2, T_LOG=3, T_RAMP_UP=4, T_RAMP_DN=5, T_DOOR=6, T_SHROOM=7;
-const CHAR2TILE = { '#':T_GROUND, 'R':T_ROCK, '=':T_LOG, '/':T_RAMP_UP, '\\':T_RAMP_DN, 'D':T_DOOR, 'M':T_SHROOM };
+const T_EMPTY=0, T_GROUND=1, T_ROCK=2, T_LOG=3, T_RAMP_UP=4, T_RAMP_DN=5, T_DOOR=6, T_SHROOM=7, T_ICE=8;
+const CHAR2TILE = { '#':T_GROUND, 'R':T_ROCK, '=':T_LOG, '/':T_RAMP_UP, '\\':T_RAMP_DN, 'D':T_DOOR, 'M':T_SHROOM, 'I':T_ICE };
 // Pilz ist seitlich solide (= Kickturn-Wand), Landung federt aber (Y-Resolve)
-const isSolid = t => t===T_GROUND || t===T_ROCK || t===T_LOG || t===T_DOOR || t===T_SHROOM;
+const isSolid = t => t===T_GROUND || t===T_ROCK || t===T_LOG || t===T_DOOR || t===T_SHROOM || t===T_ICE;
 
 let MAPW = 0, grid = [], vgrid = [], SEGOFF = {};
 let spawns = [];          // Gegner-Spawn-Beschreibungen
 let collectibles = [];    // Salat + Splitter (persistieren ueber Respawn)
-let cage = null, playerStart = {x:32,y:120};
+let cage = null, goal = null, playerStart = {x:32,y:120};
 let checkpoint = null;    // {x, y, active, animT} – nur im Speicher
 let totalSalad = 0, totalShards = 0;
 
 const hash = n => { let h = (n*2654435761)>>>0; h ^= h>>13; return (h*2246822519)>>>0; };
 
 function buildLevel(){
-  const L = LEVELS[curLevel];
+  const L = WORLDS[curWorld].levels[curLvl];
   MAPH = L.maph;
   MAPW = L.segs.reduce((a,s)=>a+s.w, 0);
   grid = []; for(let r=0;r<MAPH;r++) grid.push(new Array(MAPW).fill(0));
-  spawns = []; collectibles = []; cage = null;
+  spawns = []; collectibles = []; cage = null; goal = null;
   totalSalad = 0; totalShards = 0;
   let off = 0; SEGOFF = {};
   for(const s of L.segs){
@@ -298,15 +490,18 @@ function buildLevel(){
         else if(ch==='z'){ spawns.push({type:'sleeper', x:x+1, y:groundY-13}); }
         else if(ch==='B'){ spawns.push({type:'boss', x:x-4, y:groundY-22, doorX:(off+26)*TILE}); }
         else if(ch==='Z'){ cage = {x:x-3, y:groundY-30, w:22, h:30, open:false}; }
+        else if(ch==='F'){ goal = {x:x+2, y:groundY-44, w:12, h:44, reached:false}; }
         else if(CHAR2TILE[ch] !== undefined) grid[r][c] = CHAR2TILE[ch];
       }
     }
     off += s.w;
   }
-  // EIN Checkpoint (Fahnenmast) pro Level, Position aus der Level-Definition.
+  // Optionaler Checkpoint (Fahnenmast) pro Level, Position aus der Level-Definition.
   // dir wird beim Aktivieren gemerkt (Etagen-Level: Respawn in Fahrtrichtung).
-  checkpoint = { x:(SEGOFF[L.checkpoint.seg]+L.checkpoint.col)*TILE, y:L.checkpoint.gy,
-                 active:false, animT:0, dir:1 };
+  checkpoint = L.checkpoint
+    ? { x:(SEGOFF[L.checkpoint.seg]+L.checkpoint.col)*TILE, y:L.checkpoint.gy,
+        active:false, animT:0, dir:1 }
+    : null;
   computeVGrid();
 }
 
@@ -319,7 +514,7 @@ function tileAt(c, r){
 // Tutorial-Hinweise in der Welt (aus der Level-Definition, x in Tiles relativ zum Segment)
 let HINTS = [];
 function buildHints(){
-  HINTS = LEVELS[curLevel].hints.map(([segName, col, y, t]) =>
+  HINTS = WORLDS[curWorld].levels[curLvl].hints.map(([segName, col, y, t]) =>
     ({x:(SEGOFF[segName]+col)*TILE, y, t}));
 }
 
@@ -465,6 +660,22 @@ function paintDoor(g, top){
   }
 }
 
+// Eisblock: glasige Flaeche, Diagonal-Glanz, dunkle Unterkante
+function paintIce(g, v, seed){
+  fr(g, 0, 0, 16, 16, PAL.ice);
+  fr(g, 0, 0, 16, 2, PAL.iceHi);                     // Oberkante glaenzt
+  fr(g, 0, 13, 16, 3, PAL.iceDk);
+  fr(g, 0, 15, 16, 1, PAL.iceDeep);
+  for(let i=0;i<5;i++){                              // Diagonal-Glanzstreifen
+    const x = (hash(seed+i*17)%14);
+    fr(g, x, 3+i*2, 2, 1, PAL.iceHi);
+  }
+  // Risse
+  if(v===0){ fr(g, 4, 4, 1, 4, PAL.iceDeep); fr(g, 5, 8, 1, 3, PAL.iceDeep); fr(g, 10, 6, 1, 5, PAL.iceDk); }
+  else     { fr(g, 8, 3, 1, 5, PAL.iceDeep); fr(g, 7, 8, 1, 3, PAL.iceDk); fr(g, 12, 9, 1, 4, PAL.iceDeep); }
+  fr(g, 2, 2, 3, 1, '#ffffff');                      // Funkel-Punkt
+}
+
 // Pilz-Sprungfeder: rote Kappe mit Punkten, heller Stiel
 function paintShroom(g, v){
   fr(g, 5, 7, 6, 9, PAL.shroomStem);                 // Stiel
@@ -484,7 +695,7 @@ function paintShroom(g, v){
 function makeAtlas(){
   // Reset: wird bei Level-Themes (Palette-Wechsel) neu gebaut
   ATLAS.length = 0;
-  AT.grass = []; AT.dirt = []; AT.rock = []; AT.logM = []; AT.shroom = [];
+  AT.grass = []; AT.dirt = []; AT.rock = []; AT.logM = []; AT.shroom = []; AT.ice = [];
   DIRT_BASE = [PAL.dirt, PAL.dirtMid, PAL.dirtDeep];
   DIRT_DK   = [PAL.dirtMid, PAL.dirtDeep, PAL.dirtDeep2];
   for(let v=0;v<6;v++) AT.grass.push(atile(16, 22, 0, -6, g=>paintGrass(g, v, 101+v*37)));
@@ -499,6 +710,7 @@ function makeAtlas(){
   AT.doorT = atile(16, 16, 0, 0, g=>paintDoor(g, true));
   AT.doorM = atile(16, 16, 0, 0, g=>paintDoor(g, false));
   for(let v=0;v<2;v++) AT.shroom.push(atile(16, 16, 0, 0, g=>paintShroom(g, v)));
+  for(let v=0;v<2;v++) AT.ice.push(atile(16, 16, 0, 0, g=>paintIce(g, v, 601+v*43)));
 }
 
 // Variantengitter: pro Zelle EINMAL beim Levelbau die Atlas-Kachel
@@ -529,6 +741,7 @@ function computeVGrid(){
       else if(t===T_RAMP_DN) row[c] = AT.rampDn;
       else if(t===T_DOOR) row[c] = tileAt(c, r-1)===T_DOOR ? AT.doorM : AT.doorT;
       else if(t===T_SHROOM) row[c] = AT.shroom[hash(c*23+r*7)%2];
+      else if(t===T_ICE) row[c] = AT.ice[hash(c*19+r*3)%2];
     }
     vgrid.push(row);
   }
@@ -780,10 +993,11 @@ function applyTheme(theme){
   makeAtlas(); buildBG();
 }
 
-function startLevel(idx){     // aus der Weltauswahl: Theme laden, Story-Card zeigen
-  curLevel = idx; selIdx = idx;
-  applyTheme(LEVELS[idx].theme);
-  state = 'intro'; stateT = 0;
+function startLevel(w, l){    // Theme laden; Story-Card nur beim ersten Betreten der Welt
+  curWorld = w; curLvl = l; selW = w; selL = l;
+  applyTheme(WORLDS[w].theme);
+  if(!seenIntro[w]){ seenIntro[w] = true; state = 'intro'; stateT = 0; }
+  else startRun();
 }
 
 function startRun(){          // kompletter Neustart des Levels (Checkpoint resettet)
@@ -802,23 +1016,43 @@ let jumpBufT = -9, lastTapT = -9, pointerHeld = false, holdT = 0, keyRoll = fals
 function tap(cp){
   if(state === 'play'){ jumpBufT = gt; lastTapT = gt; }
   else if(state === 'pause'){ if(stateT > 0.15){ state = 'play'; stateT = 0; holdT = -9; } } // Resume-Tap darf kein Rollen ausloesen
-  else if(state === 'select'){
+  else if(state === 'worldsel'){
     if(stateT < 0.3) return;
-    if(cp) selIdx = cp.x < VW/2 ? 0 : 1;   // Touch: Karte direkt antippen
+    if(cp){
+      const i = Math.floor((cp.x - 16) / 98);          // 3 Karten a 90px + 8 Abstand
+      if(i >= 0 && i < WORLDS.length && cp.y > 36 && cp.y < 140) selW = i;
+      else return;
+    }
+    if(!isUnlocked(selW, 0)){ AU.hurt(); return; }      // gesperrt
+    AU.click(); selL = 0;
+    applyTheme(WORLDS[selW].theme);                     // Menue-Himmel im Welt-Look
+    state = 'levelsel'; stateT = 0;
+  }
+  else if(state === 'levelsel'){
+    if(stateT < 0.3) return;
+    if(cp){
+      if(cp.x < 52 && cp.y < 34){ AU.click(); state = 'worldsel'; stateT = 0; return; } // Zurueck
+      const i = Math.floor((cp.x - 40) / 84);          // 3 Buttons a 72px + 12 Abstand
+      if(i >= 0 && i < 3 && cp.y > 56 && cp.y < 140) selL = i;
+      else return;
+    }
+    if(!isUnlocked(selW, selL)){ AU.hurt(); return; }
     AU.click();
-    startLevel(selIdx);
+    startLevel(selW, selL);
   }
   else menuAdvance();
 }
 function menuAdvance(){
   if(stateT < 0.5) return; // Doppel-Tipp-Schutz
   AU.click();
-  if(state === 'title'){ state = 'select'; stateT = 0; }
+  if(state === 'title'){ state = 'worldsel'; stateT = 0; }
   else if(state === 'intro'){ startRun(); }
   else if(state === 'gameover'){ startRun(); }
   else if(state === 'win'){
-    if(curLevel + 1 < LEVELS.length) startLevel(curLevel + 1);   // direkt weiter
-    else { state = 'select'; stateT = 0; }
+    const W = WORLDS[curWorld];
+    if(curLvl + 1 < W.levels.length) startLevel(curWorld, curLvl + 1);
+    else if(curWorld + 1 < WORLDS.length) startLevel(curWorld + 1, 0);
+    else { state = 'worldsel'; stateT = 0; }
   }
 }
 
@@ -832,9 +1066,14 @@ function canvasPos(e){
 addEventListener('keydown', e => {
   if(e.repeat) return;
   AU.init(); AU.resume();
-  if(state === 'select' && (e.code==='ArrowLeft' || e.code==='ArrowRight')){
-    selIdx = e.code==='ArrowLeft' ? 0 : 1;
+  if((state === 'worldsel' || state === 'levelsel') && (e.code==='ArrowLeft' || e.code==='ArrowRight')){
+    const dlt = e.code==='ArrowLeft' ? -1 : 1;
+    if(state === 'worldsel') selW = Math.max(0, Math.min(WORLDS.length-1, selW + dlt));
+    else selL = Math.max(0, Math.min(WORLDS[selW].levels.length-1, selL + dlt));
     AU.click(); e.preventDefault(); return;
+  }
+  if(state === 'levelsel' && (e.code==='Backspace' || e.code==='Escape')){
+    state = 'worldsel'; stateT = 0; AU.click(); e.preventDefault(); return;
   }
   if(e.code==='Space' || e.code==='ArrowUp' || e.code==='KeyW'){ tap(null); e.preventDefault(); }
   if(e.code==='ArrowDown' || e.code==='KeyS'){ keyRoll = true; e.preventDefault(); }
@@ -923,12 +1162,19 @@ function updatePlayer(dt){
   const onDown = onRampType(T_RAMP_DN), onUp = onRampType(T_RAMP_UP);
   const downhill = P.dir === 1 ? onDown : onUp;
   const uphill   = P.dir === 1 ? onUp : onDown;
+  // Eis unter den Fuessen (Welt 3): fast keine Reibung - Boost haelt,
+  // aber auch das Anfahren ist traege (Drift-Gefuehl)
+  let onIce = false;
+  if(P.grounded){
+    const fr2 = Math.floor((P.y+P.h+1)/TILE), fc = Math.floor((P.x+P.w/2)/TILE);
+    onIce = tileAt(fc, fr2) === T_ICE;
+  }
   if(P.rolling && P.grounded && downhill){
     P.vx = Math.min(MAX_SPD, P.vx + 300*dt); // Panzer-Roll bergab = Boost
   } else if(P.vx < BASE_SPD){
-    P.vx = Math.min(BASE_SPD, P.vx + 170*dt);
+    P.vx = Math.min(BASE_SPD, P.vx + (onIce?60:170)*dt);
   } else {
-    P.vx = Math.max(BASE_SPD, P.vx - (P.rolling?38:58)*dt); // Boost klingt langsam ab
+    P.vx = Math.max(BASE_SPD, P.vx - (onIce?6:(P.rolling?38:58))*dt); // Boost klingt langsam ab
   }
   if(P.grounded && uphill && !P.rolling) P.vx = Math.max(BASE_SPD*0.85, P.vx - 90*dt);
 
@@ -1067,15 +1313,25 @@ function updatePlayer(dt){
     }
   }
 
-  // --- Kaefig / Level-Ende ---
+  // --- Kaefig (Welt-Finale) ---
   if(cage && !cage.open && overlap(P, cage)){
     cage.open = true;
-    beaten[curLevel] = true;
+    markDone();
     state = 'rescue'; stateT = 0;
     zip = {x:cage.x+8, y:cage.y+18, vy:0, hop:0};
     P.vx = 0;
     sparkle(cage.x+11, cage.y+10, PAL.shard);
     AU.fanfare();
+  }
+
+  // --- Zielflagge (normales Level-Ende) ---
+  if(goal && !goal.reached && overlap(P, goal)){
+    goal.reached = true;
+    markDone();
+    state = 'clear'; stateT = 0;
+    P.vx = 0;
+    sparkle(goal.x+6, goal.y+6, PAL.gold);
+    AU.fanfare(); vib(25);
   }
 }
 
@@ -1192,6 +1448,11 @@ function update(dt){
     cam.y += (targetY - cam.y)*Math.min(1, 8*dt);
   } else if(state === 'pause'){
     // eingefroren – nur auf Tipp warten
+  } else if(state === 'clear'){
+    updateParticles(dt);
+    if(goal && Math.random() < 0.2)
+      sparkle(goal.x + 6 + (Math.random()-0.5)*26, goal.y + Math.random()*30, PAL.gold);
+    if(stateT > 1.3){ state = 'win'; stateT = 0; }
   } else if(state === 'rescue'){
     updateParticles(dt);
     if(zip){
@@ -1313,6 +1574,17 @@ function drawSky(){
   off = Math.round(off);
   ctx.drawImage(BG.near, -off, ny);
   ctx.drawImage(BG.near, BGW-off, ny);
+  // Schneefall (Welt 3) - deterministisch aus hash+gt, kein Partikel-State
+  if(PAL.snow){
+    ctx.fillStyle = '#ffffff';
+    for(let i=0;i<26;i++){
+      const spd = 14 + (hash(i*7)%18);
+      const sx = ((hash(i*13)%360) - cam.x*0.3 + Math.sin(gt*0.9 + i)*7);
+      const sy = ((hash(i*29)%210) + gt*spd);
+      ctx.fillRect(Math.round(((sx%360)+360)%360 - 20), Math.round(((sy%200)+200)%200 - 10),
+                   i%3?1:2, i%3?1:2);
+    }
+  }
 }
 
 function drawTiles(){
@@ -1352,6 +1624,26 @@ function drawCheckpoint(){
   px(x+13+wob, fy+1, 2, 3, c1);
   px(x+8, fy+4, 7, 1, c2);
   if(act && checkpoint.animT < 1.2) txt('CHECKPOINT!', x+7, gy-H-14, '#fff', 7, 'center');
+}
+
+// Zielflagge: Ende eines normalen Levels (Welt-Finale hat stattdessen den Kaefig)
+function drawGoal(){
+  if(!goal) return;
+  const x = Math.round(goal.x - cam.x), y = Math.round(goal.y - cam.y);
+  if(x < -30 || x > VW+30) return;
+  px(x+1, y+goal.h-2, 10, 2, PAL.rockDark);          // Sockel
+  px(x+5, y, 2, goal.h-2, PAL.rock);                 // Mast
+  px(x+5, y, 1, goal.h-2, PAL.rockHi);
+  px(x+4, y-3, 4, 3, PAL.gold);                      // Knauf
+  px(x+4, y-3, 1, 1, PAL.goldHi);
+  const wob = Math.round(Math.sin(gt*5));            // wehende Zielfahne
+  px(x+7, y+2, 9, 7, PAL.gold);
+  px(x+7, y+2, 9, 2, PAL.goldHi);
+  px(x+15+wob, y+3, 2, 5, PAL.gold);
+  px(x+7, y+8, 9, 1, PAL.goldDk);
+  px(x+9, y+4, 2, 2, PAL.heart);                     // kleines Herz-Emblem
+  px(x+12, y+4, 2, 2, PAL.heart);
+  px(x+10, y+6, 3, 1, PAL.heart);
 }
 
 function drawCollectibles(){
@@ -1493,19 +1785,25 @@ function drawCage(){
       px(x+i+1, y+cage.h-8, 1, 5, PAL.goldDk);
     }
   }
-  txt(LEVELS[curLevel].buddy, x+cage.w/2, y-16, '#fff', 7, 'center');
+  txt(WORLDS[curWorld].buddy, x+cage.w/2, y-16, '#fff', 7, 'center');
 }
-// Gerettetes Tier: Zip (Gecko, flacher Schwanz) oder Nio (Eichhoernchen, Puschel + Ohren)
+// Gerettetes Tier: Zip (Gecko), Nio (Eichhoernchen) oder Poppy (Haesin)
 function drawBuddy(x, y, hop){
-  const L = LEVELS[curLevel];
-  const c1 = L.buddyC1, c2 = L.buddyC2;
+  const W = WORLDS[curWorld];
+  const c1 = W.buddyC1, c2 = W.buddyC2;
   const dy = -Math.abs(Math.sin(hop))*4;
-  if(L.buddyTail){
+  if(W.buddyKind === 'squirrel'){
     px(x-4, y-2+dy, 4, 9, c2);          // buschiger Schwanz
     px(x-5, y-1+dy, 2, 6, c2);
     px(x-3, y-2+dy, 2, 3, c1);
     px(x+8, y-3+dy, 2, 3, c2);          // Ohren
     px(x+11, y-3+dy, 2, 3, c2);
+  } else if(W.buddyKind === 'bunny'){
+    px(x+8, y-6+dy, 2, 7, c1);          // lange Loeffel
+    px(x+11, y-6+dy, 2, 7, c1);
+    px(x+8, y-5+dy, 1, 4, PAL.bowHi);   // Innenohr
+    px(x+11, y-5+dy, 1, 4, PAL.bowHi);
+    px(x-2, y+3+dy, 3, 3, '#ffffff');   // Puschelschwanz
   } else {
     px(x-4, y+4+dy, 5, 2, c2);          // flacher Gecko-Schwanz
   }
@@ -1720,13 +2018,13 @@ function drawTitle(){
   px(ox, oy-4, 2, 2, PAL.bowDark);
   px(ox-4, oy+18, 5, 5, PAL.bodyDark); px(ox+6, oy+18, 5, 5, PAL.bodyDark);
   if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder LEERTASTE', VW/2, 156, '#fff', 9, 'center');
-  txt('PROTOTYP v0.4 - WELT 1 + 2', VW/2, 169, '#ffffffaa', 6, 'center');
+  txt('PROTOTYP v0.5 - 3 WELTEN, 9 LEVEL', VW/2, 169, '#ffffffaa', 6, 'center');
   drawMuteIcon();
 }
 
 function drawIntro(){
   drawSky();
-  const I = LEVELS[curLevel].intro;
+  const I = WORLDS[curWorld].intro;
   const p = panel(280, 140);
   txt(I.head, VW/2, p.y+8, '#8a2be2', 10, 'center');
   I.lines.forEach((l,i)=>txt(l, VW/2, p.y+26+i*11, '#33424e', 8, 'center'));
@@ -1735,41 +2033,97 @@ function drawIntro(){
   if(Math.floor(gt*1.6)%2===0) txt('- Tippen zum Start -', VW/2, p.y+132, '#e04a3a', 8, 'center');
 }
 
-// Welt-Auswahl: 2 Karten, Tap auf Karte oder Pfeiltasten + Leertaste
-function drawSelect(){
+// kleines Schloss-Icon fuer gesperrte Welten/Level
+function drawLock(x, y, c){
+  px(x+1, y, 6, 3, c); px(x, y+1, 2, 3, c); px(x+6, y+1, 2, 3, c);   // Buegel
+  px(x-1, y+4, 10, 7, c);                                            // Koerper
+  px(x+3, y+6, 2, 3, '#00000055');                                   // Schluesselloch
+}
+// Mini-Splitter (Stern-Ersatz) fuer die Level-Buttons
+function drawMiniShard(x, y, on){
+  px(x+1, y, 4, 2, on?PAL.shardHi:'#00000033');
+  px(x, y+2, 6, 4, on?PAL.shard:'#00000033');
+  px(x+1, y+6, 4, 2, on?PAL.shard:'#00000033');
+  if(on) px(x+1, y+2, 1, 2, PAL.shardHi);
+}
+
+// Welt-Auswahl: 3 Karten
+function drawWorldSel(){
   drawSky();
   px(0, 150, VW, 30, PAL.grass); px(0, 150, VW, 3, PAL.grassLip);
-  otxt('WAEHLE DEINE WELT', VW/2, 14, 2, '#fff', '#1c4a26', 'center');
-  for(let i=0;i<LEVELS.length;i++){
-    const L = LEVELS[i];
-    const x = 34 + i*136, y = 44, w = 116, h = 84;
-    const sel = i === selIdx;
-    // Rahmen (gewaehlt = gold)
+  otxt('WAEHLE DEINE WELT', VW/2, 12, 2, '#fff', '#1c4a26', 'center');
+  for(let i=0;i<WORLDS.length;i++){
+    const W = WORLDS[i];
+    const x = 18 + i*98, y = 40, w = 88, h = 96;
+    const sel = i === selW, open = isUnlocked(i, 0);
     px(x-3, y-3, w+6, h+6, sel ? PAL.gold : '#1f3a24');
     px(x-1, y-1, w+2, h+2, sel ? PAL.goldHi : '#2e4a2e');
-    // Mini-Vorschau: Himmel + Huegel + Boden im Level-Theme
-    const T = Object.assign({}, PAL_BASE, L.theme);
+    const T = Object.assign({}, PAL_BASE, W.theme);
     px(x, y, w, h, T.sky1);
-    px(x, y+30, w, 14, T.hillFar);
-    px(x, y+40, w, 20, T.hillNear);
-    px(x, y+56, w, 12, T.grass);
-    px(x, y+56, w, 2, T.grassLip);
+    px(x, y+28, w, 12, T.hillFar);
+    px(x, y+38, w, 16, T.hillNear);
+    px(x, y+50, w, 12, T.grass);
+    px(x, y+50, w, 2, T.grassLip);
     if(i === 0){                              // Wiesental: Blume + Sonne
-      px(x+18, y+48, 3, 8, T.grass);
-      px(x+16, y+44, 6, 5, PAL_BASE.flower); px(x+18, y+46, 2, 2, PAL.sun);
-      px(x+90, y+8, 9, 9, PAL.sun);
-    } else {                                  // Pilzwald: grosser Pilz
-      px(x+16, y+42, 6, 16, T.pebbleHi);
-      px(x+8, y+34, 22, 9, PAL.shroomCap);
-      px(x+12, y+30, 14, 5, PAL.shroomCap);
-      px(x+12, y+36, 3, 3, '#fff'); px(x+22, y+33, 3, 3, '#fff');
+      px(x+14, y+42, 3, 8, T.grass);
+      px(x+12, y+38, 6, 5, PAL_BASE.flower); px(x+14, y+40, 2, 2, PAL.sun);
+      px(x+68, y+6, 8, 8, PAL.sun);
+    } else if(i === 1){                       // Pilzwald: Pilz
+      px(x+14, y+38, 6, 14, T.pebbleHi);
+      px(x+7, y+31, 20, 8, PAL.shroomCap);
+      px(x+10, y+27, 14, 5, PAL.shroomCap);
+      px(x+10, y+33, 3, 3, '#fff'); px(x+19, y+30, 3, 3, '#fff');
+    } else {                                  // Frostklippen: Schneeflocke + Eiszapfen
+      px(x+66, y+8, 2, 10, '#fff'); px(x+62, y+12, 10, 2, '#fff');
+      px(x+63, y+9, 2, 2, '#fff'); px(x+69, y+9, 2, 2, '#fff');
+      px(x+63, y+15, 2, 2, '#fff'); px(x+69, y+15, 2, 2, '#fff');
+      px(x+12, y+50, 3, 6, PAL.ice); px(x+18, y+50, 3, 9, PAL.ice); px(x+24, y+50, 3, 5, PAL.ice);
     }
-    txt(L.sub, x+w/2, y+64, '#fff', 8, 'center');
-    txt(L.name, x+w/2, y+73, '#ffe9a0', 7, 'center');
-    if(beaten[i]) txt('GESCHAFFT!', x+w/2, y+8, '#7ed957', 7, 'center');
+    if(!open){                                // gesperrt: abdunkeln + Schloss
+      ctx.fillStyle = 'rgba(20,25,35,0.62)'; ctx.fillRect(x, y, w, h);
+      drawLock(x+w/2-4, y+30, '#cfd6de');
+    }
+    txt(W.sub, x+w/2, y+66, '#fff', 8, 'center');
+    txt(W.name, x+w/2, y+76, open ? '#ffe9a0' : '#9aa4ae', 7, 'center');
+    if(worldDone(i)) txt('FERTIG!', x+w/2, y+5, '#7ed957', 7, 'center');
+    else if(open){
+      const n = prog[i].filter(p=>p.done).length;
+      txt(n + '/' + WORLDS[i].levels.length, x+w/2, y+86, '#ffffffcc', 7, 'center');
+    }
   }
-  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder PFEILE + LEERTASTE', VW/2, 152, '#fff', 8, 'center');
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder PFEILE + LEER', VW/2, 154, '#fff', 8, 'center');
   txt('FORTSCHRITT NUR IM SPEICHER (PROTOTYP)', VW/2, 168, '#ffffff88', 6, 'center');
+}
+
+// Level-Auswahl innerhalb einer Welt: 3 grosse Buttons mit Splitter-Bestwert
+function drawLevelSel(){
+  drawSky();
+  px(0, 150, VW, 30, PAL.grass); px(0, 150, VW, 3, PAL.grassLip);
+  const W = WORLDS[selW];
+  otxt(W.sub + ': ' + W.name, VW/2, 12, 2, '#fff', '#1c4a26', 'center');
+  // Zurueck-Button
+  px(6, 8, 40, 18, '#1f3a24'); px(8, 10, 36, 14, '#2e4a2e');
+  txt('<', 16, 13, PAL.goldHi, 9); txt('ZUR.', 22, 14, '#fff', 7);
+  for(let i=0;i<W.levels.length;i++){
+    const L = W.levels[i];
+    const x = 44 + i*84, y = 60, w = 64, h = 72;
+    const sel = i === selL, open = isUnlocked(selW, i), p = prog[selW][i];
+    px(x-3, y-3, w+6, h+6, sel ? PAL.gold : '#1f3a24');
+    px(x-1, y-1, w+2, h+2, sel ? PAL.goldHi : '#2e4a2e');
+    px(x, y, w, h, open ? '#f7efd2' : '#8a8f96');
+    px(x, y, w, 2, open ? '#fffbe8' : '#9aa0a8');
+    if(open){
+      otxt(String(i+1), x+w/2, y+8, 3, '#2e7d32', '#1c4a26', 'center');
+      for(let s=0;s<3;s++) drawMiniShard(x+w/2-14+s*10, y+36, s < p.best);
+      if(p.done) txt('OK!', x+w/2, y+52, '#2e9e46', 8, 'center');
+      else txt(i === 2 ? 'FINALE' : '', x+w/2, y+53, '#8a5a33', 6, 'center');
+    } else {
+      drawLock(x+w/2-4, y+18, '#5c636b');
+      txt('GESPERRT', x+w/2, y+52, '#5c636b', 6, 'center');
+    }
+    txt(L.name, x+w/2, y+h+4, open ? '#fff' : '#ffffff88', 6, 'center');
+  }
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder PFEILE + LEER', VW/2, 154, '#fff', 8, 'center');
 }
 
 function drawGameOver(){
@@ -1787,27 +2141,35 @@ function drawPause(){
 }
 
 function drawWin(){
-  const L = LEVELS[curLevel];
+  const W = WORLDS[curWorld], finale = !!cage;
   px(0, 0, VW, VH, 'rgba(20,40,25,0.75)');
-  otxt('GERETTET!', VW/2, 26, 3, '#7ed957', '#173a1f', 'center');
-  drawBuddy(VW/2-6, 58, gt*5);
-  txt(L.win[0], VW/2, 80, '#eee', 8, 'center');
-  txt(L.win[1], VW/2, 91, '#eee', 8, 'center');
+  if(finale){
+    otxt('GERETTET!', VW/2, 26, 3, '#7ed957', '#173a1f', 'center');
+    drawBuddy(VW/2-6, 58, gt*5);
+    txt(W.win[0], VW/2, 80, '#eee', 8, 'center');
+    txt(W.win[1], VW/2, 91, '#eee', 8, 'center');
+  } else {
+    otxt('GESCHAFFT!', VW/2, 26, 3, '#7ed957', '#173a1f', 'center');
+    txt(W.sub + '-' + (curLvl+1) + ': ' + W.levels[curLvl].name, VW/2, 62, PAL.goldHi, 9, 'center');
+    txt('Weiter geht die Rettungsfahrt!', VW/2, 88, '#eee', 8, 'center');
+  }
   // Statistik-Zeilen mit Trennlinie
   px(VW/2-70, 106, 140, 1, '#ffffff33');
   txt('Salat: ' + saladCount + ' / ' + totalSalad, VW/2, 113, '#8fe14f', 9, 'center');
   txt('Splitter: ' + shardCount + ' / ' + totalShards, VW/2, 125, PAL.shard, 9, 'center');
   txt('Zeit: ' + fmtTime(playT), VW/2, 137, '#fff', 9, 'center');
   px(VW/2-70, 149, 140, 1, '#ffffff33');
-  const next = curLevel + 1 < LEVELS.length;
-  if(Math.floor(gt*1.6)%2===0)
-    txt(next ? 'TIPPEN = WEITER ZU ' + LEVELS[curLevel+1].sub : 'TIPPEN = WELT-AUSWAHL',
-        VW/2, 158, '#fff', 8, 'center');
+  const nextL = curLvl + 1 < W.levels.length, nextW = curWorld + 1 < WORLDS.length;
+  const prompt = nextL ? 'TIPPEN = WEITER ZU LEVEL ' + (curWorld+1) + '-' + (curLvl+2)
+               : nextW ? 'TIPPEN = WEITER ZU ' + WORLDS[curWorld+1].sub
+               : 'TIPPEN = WELT-AUSWAHL';
+  if(Math.floor(gt*1.6)%2===0) txt(prompt, VW/2, 158, '#fff', 8, 'center');
 }
 
 function render(){
   if(state === 'title'){ drawTitle(); return; }
-  if(state === 'select'){ drawSelect(); drawMuteIcon(); return; }
+  if(state === 'worldsel'){ drawWorldSel(); drawMuteIcon(); return; }
+  if(state === 'levelsel'){ drawLevelSel(); drawMuteIcon(); return; }
   if(state === 'intro'){ drawIntro(); drawMuteIcon(); return; }
 
   // Welt (auch als Hintergrund fuer Overlays)
@@ -1816,6 +2178,7 @@ function render(){
   drawSky();
   drawTiles();
   drawCheckpoint();
+  drawGoal();
   drawCage();
   drawCollectibles();
   for(const e of enemies) if(e.alive) drawCrow(e);
@@ -1831,10 +2194,17 @@ function render(){
   }
   drawHUD();
 
+  // Level-Banner beim Start (Welt X-Y + Name)
+  if(state === 'play' && playT < 1.7){
+    otxt('WELT ' + (curWorld+1) + '-' + (curLvl+1), VW/2, 30, 2, '#ffffff', '#1c4a26', 'center');
+    txt(WORLDS[curWorld].levels[curLvl].name, VW/2, 48, PAL.goldHi, 8, 'center');
+  }
+
   if(state === 'gameover') drawGameOver();
   else if(state === 'win') drawWin();
   else if(state === 'pause') drawPause();
-  else if(state === 'rescue') otxt(LEVELS[curLevel].buddy + ' IST FREI!', VW/2, 38, 2, PAL.goldHi, '#5c3a06', 'center');
+  else if(state === 'rescue') otxt(WORLDS[curWorld].buddy + ' IST FREI!', VW/2, 38, 2, PAL.goldHi, '#5c3a06', 'center');
+  else if(state === 'clear') otxt('GESCHAFFT!', VW/2, 38, 2, PAL.goldHi, '#5c3a06', 'center');
   drawMuteIcon();
 }
 
@@ -1864,12 +2234,13 @@ respawnPlayer(); P.invulnT = 0;
 resize();
 requestAnimationFrame(loop);
 
-// Debug-Zugriff (Prototyp)
+// Debug-Zugriff (Prototyp) - G.unlockAll() schaltet alle Level frei
 window.G = { P, get state(){return state;}, set state(s){state=s;}, get grid(){return grid;},
   get enemies(){return enemies;}, get hearts(){return hearts;}, cam, startRun, startLevel,
-  get collectibles(){return collectibles;}, get cage(){return cage;},
-  get checkpoint(){return checkpoint;}, get curLevel(){return curLevel;},
-  get MAPH(){return MAPH;}, get MAPW(){return MAPW;}, applyTheme, LEVELS };
+  get collectibles(){return collectibles;}, get cage(){return cage;}, get goal(){return goal;},
+  get checkpoint(){return checkpoint;}, get curWorld(){return curWorld;}, get curLvl(){return curLvl;},
+  get MAPH(){return MAPH;}, get MAPW(){return MAPW;}, applyTheme, WORLDS, prog,
+  unlockAll(){ prog.forEach(w => w.forEach(l => l.done = true)); } };
 </script>
 </body>
 </html>
