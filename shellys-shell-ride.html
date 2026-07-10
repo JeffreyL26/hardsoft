@@ -324,13 +324,13 @@ const WORLDS = [
     intro:{
       head:'DAS TAL DER TIERE',
       lines:[
-        'Rabenkoenig CORVO hat Shellys schnelle',
-        'Freunde entfuehrt - Poppy, Nio und Zip.',
-        'Nur die "langsame" Schildkroete liess',
-        'er zurueck. Sein Fehler.',
+        'Rabenkönig CORVO hat Shellys schnelle',
+        'Freunde entführt - Poppy, Nio und Zip.',
+        'Nur die "langsame" Schildkröte ließ',
+        'er zurück. Sein Fehler.',
         '',
         'Shelly schnappt sich ein Fingerskateboard.',
-        'Rette ZIP aus dem Kaefig!'
+        'Rette ZIP aus dem Käfig!'
       ],
       tips:['TIPPEN = Paddeln + Springen', 'HALTEN / RUNTER = Panzer-Roll']
     },
@@ -368,28 +368,28 @@ const WORLDS = [
       head:'DER PILZWALD',
       lines:[
         'Zip ist frei! Doch Corvo schleppt',
-        'NIO das Eichhoernchen tiefer in den',
+        'NIO das Eichhörnchen tiefer in den',
         'Wald - dorthin, wo Riesenpilze',
         'den Himmel verdecken.',
         '',
         'Pilzkappen federn dich nach oben.',
         'Rette NIO!'
       ],
-      tips:['PILZE = SPRUNGFEDERN', 'WAENDE = PANZER-KICKTURN']
+      tips:['PILZE = SPRUNGFEDERN', 'WÄNDE = PANZER-KICKTURN']
     },
-    win:['"Krass, Shelly! Du bist ja hoeher', 'geklettert als jedes Eichhoernchen!"'],
+    win:['"Krass, Shelly! Du bist ja höher', 'geklettert als jedes Eichhörnchen!"'],
     levels:[
       { name:'SPORENPFAD', maph:12, segs:SEGS_W21,
         checkpoint:null,
-        hints:[['sp',14,120,'WAENDE DREHEN DICH UM'], ['sp',58,120,'SPRING AN DIE WAND!'],
-               ['sp',48,44,'OBEN GEHT ES ZURUECK']] },
+        hints:[['sp',14,120,'WÄNDE DREHEN DICH UM'], ['sp',58,120,'SPRING AN DIE WAND!'],
+               ['sp',48,44,'OBEN GEHT ES ZURÜCK']] },
       { name:'HOCH HINAUS', maph:18, segs:[SEG_START_HH, ...SEGS_W22],
         checkpoint:null,
-        hints:[['hh',38,210,'SPRING AN DIE WAND!'], ['hh',30,130,'LOECHER = NUR UMWEG']] },
-      { name:'NIOS KAEFIG', maph:22, segs:SEGS2,
+        hints:[['hh',38,210,'SPRING AN DIE WAND!'], ['hh',30,130,'LÖCHER = NUR UMWEG']] },
+      { name:'NIOS KÄFIG', maph:22, segs:SEGS2,
         checkpoint:{seg:'w2', col:20, gy:14*TILE},
         hints:[['w2',4,272,'STEINE = KICKTURN!'], ['w2',34,250,'LOCH = ABGRUND!'],
-               ['w2',74,268,'SPRING AN DIE WAND!'], ['w2',52,178,'LOECHER OBEN = NUR UMWEG'],
+               ['w2',74,268,'SPRING AN DIE WAND!'], ['w2',52,178,'LÖCHER OBEN = NUR UMWEG'],
                ['w2',36,82,'BOING ZUM SPLITTER!']] }
     ]
   },
@@ -412,7 +412,7 @@ const WORLDS = [
       head:'DIE FROSTKLIPPEN',
       lines:[
         'Hoch oben im Eis zittert POPPY',
-        'die Haesin in Corvos Kaefig.',
+        'die Häsin in Corvos Käfig.',
         'Der Boden? Spiegelglatt.',
         '',
         'Auf Eis bleibt dein Schwung -',
@@ -421,18 +421,18 @@ const WORLDS = [
       ],
       tips:['EIS = SCHWUNG BLEIBT', 'ROLLEN + FEDERN WIE GEHABT']
     },
-    win:['"D-danke Shelly! Du bist die', 'coolste Schildkroete der Welt!"'],
+    win:['"D-danke Shelly! Du bist die', 'coolste Schildkröte der Welt!"'],
     levels:[
       { name:'GLATTEIS', maph:12, segs:SEGS_W31,
         checkpoint:{seg:'s31c', col:2, gy:10*TILE},
-        hints:[['s31a',4,120,'EIS: SCHWUNG BLEIBT!'], ['s31b',8,110,'MIT SPEED UEBER DIE LUECKE'],
+        hints:[['s31a',4,120,'EIS: SCHWUNG BLEIBT!'], ['s31b',8,110,'MIT SPEED ÜBER DIE LÜCKE'],
                ['s31c',12,100,'BOUNCE AUF DIE WACHE!']] },
       { name:'KLIPPENRUTSCHE', maph:12, segs:SEGS_W32,
         checkpoint:{seg:'s32c', col:1, gy:10*TILE},
         hints:[['s32b',6,100,'ROLLE BERGAB + EIS = TURBO'], ['s32c',18,100,'SPRING AM EISRAND AB!']] },
       { name:'FROSTGIPFEL', maph:18, segs:SEGS_W33,
         checkpoint:{seg:'fg', col:46, gy:10*TILE},
-        hints:[['fg',40,200,'SPRING AN DIE WAND!'], ['fg',36,120,'ROLLE LEISE UEBERS EIS'],
+        hints:[['fg',40,200,'SPRING AN DIE WAND!'], ['fg',36,120,'ROLLE LEISE ÜBERS EIS'],
                ['fg',10,120,'POPPY WARTET LINKS!']] }
     ]
   }
@@ -1012,9 +1012,19 @@ function startRun(){          // kompletter Neustart des Levels (Checkpoint rese
 // INPUT  (Touch: Tippen = Sprung, Halten = Rollen | Tastatur: Space / Runter)
 // ============================================================
 let jumpBufT = -9, lastTapT = -9, pointerHeld = false, holdT = 0, keyRoll = false;
+// Touch/Maus teilen sich EINEN Knopf fuer Sprung und Rollen. Ein Tap darf nicht
+// zuerst einen Sprung ausloesen und dann erst ins Rollen kippen ("Hüpfer vorm
+// Rollen"). Deshalb wird bei Touch/Maus der Sprung nicht sofort gezuendet,
+// sondern erst entschieden: schnell losgelassen (< ROLL_HOLD_T) = Sprung,
+// laenger gehalten = direkt Rollen (kein Sprung). Tastatur ist unbetroffen,
+// da dort eine eigene Taste (Pfeil-runter/S) fuers Rollen zustaendig ist.
+let padJumpPending = false;
+const ROLL_HOLD_T = 0.08;
+
+function jumpNow(){ jumpBufT = gt; lastTapT = gt; }   // sofortiger Sprung-Trigger (Tastatur + entschiedener Touch-Tap)
 
 function tap(cp){
-  if(state === 'play'){ jumpBufT = gt; lastTapT = gt; }
+  if(state === 'play'){ padJumpPending = true; }       // Entscheidung (Sprung/Rollen) faellt in updatePlayer()
   else if(state === 'pause'){ if(stateT > 0.15){ state = 'play'; stateT = 0; holdT = -9; } } // Resume-Tap darf kein Rollen ausloesen
   else if(state === 'worldsel'){
     if(stateT < 0.3) return;
@@ -1075,7 +1085,11 @@ addEventListener('keydown', e => {
   if(state === 'levelsel' && (e.code==='Backspace' || e.code==='Escape')){
     state = 'worldsel'; stateT = 0; AU.click(); e.preventDefault(); return;
   }
-  if(e.code==='Space' || e.code==='ArrowUp' || e.code==='KeyW'){ tap(null); e.preventDefault(); }
+  if(e.code==='Space' || e.code==='ArrowUp' || e.code==='KeyW'){
+    if(state === 'play') jumpNow();        // Tastatur: keine Tap/Halten-Ambiguitaet -> sofort
+    else tap(null);
+    e.preventDefault();
+  }
   if(e.code==='ArrowDown' || e.code==='KeyS'){ keyRoll = true; e.preventDefault(); }
   if(e.code==='KeyM'){ AU.setMute(!AU.muted); }
 });
@@ -1102,7 +1116,7 @@ addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('visibilitychange', () => {
   if(document.hidden && state === 'play'){
     state = 'pause'; stateT = 0;
-    pointerHeld = false; keyRoll = false; activePointers.clear();
+    pointerHeld = false; keyRoll = false; activePointers.clear(); padJumpPending = false;
   }
   // Musik sofort stoppen: ohne rAF laeuft update() nicht mehr,
   // der Interval-Scheduler wuerde sonst im Hintergrund weiterdudeln
@@ -1110,7 +1124,7 @@ document.addEventListener('visibilitychange', () => {
   else AU.resume();
 });
 // Fokusverlust: gehaltene Eingaben loslassen (keyup/pointerup kommen sonst nie an)
-addEventListener('blur', () => { pointerHeld = false; keyRoll = false; activePointers.clear(); });
+addEventListener('blur', () => { pointerHeld = false; keyRoll = false; activePointers.clear(); padJumpPending = false; });
 
 // ============================================================
 // UPDATE
@@ -1146,7 +1160,15 @@ function headroomFree(){ // Platz zum Aufstehen?
 }
 
 function updatePlayer(dt){
-  const wantRoll = keyRoll || (pointerHeld && holdT > 0.13);
+  // Touch/Maus-Tap: erst jetzt entscheiden, ob es ein Sprung oder ein Halten-zum-Rollen war.
+  // Losgelassen, bevor die Halten-Schwelle erreicht ist -> Sprung. Noch gehalten, sobald
+  // die Schwelle erreicht ist -> wird zu Rollen, der Sprung wird ersatzlos verworfen.
+  if(padJumpPending){
+    if(!pointerHeld){ jumpNow(); padJumpPending = false; }
+    else if(holdT > ROLL_HOLD_T){ padJumpPending = false; }
+  }
+
+  const wantRoll = keyRoll || (pointerHeld && holdT > ROLL_HOLD_T);
 
   // --- Rollen an/aus ---
   if(wantRoll && !P.rolling){
@@ -1495,7 +1517,12 @@ const FONT = {
   '?':[14,17,1,6,4,0,4],    ':':[0,12,12,0,12,12,0],  '-':[0,0,0,14,0,0,0],
   '=':[0,0,31,0,31,0,0],    '/':[1,1,2,4,8,16,16],    '"':[10,10,0,0,0,0,0],
   "'":[4,4,0,0,0,0,0],      '(':[2,4,8,8,8,4,2],      ')':[8,4,2,2,2,4,8],
-  '+':[0,4,4,31,4,4,0]
+  '+':[0,4,4,31,4,4,0],
+  // Umlaute: Zeile 0 = zwei Punkte, Zeilen 1-6 = Basisbuchstabe ohne dessen
+  // oberste Zeile (die durch die Punkte ersetzt wird) - passt so in die
+  // vorhandene 7-Zeilen-Hoehe, ohne den Buchstabenkoerper zu stauchen.
+  'Ä':[10,17,17,31,17,17,17], 'Ö':[10,17,17,17,17,17,14], 'Ü':[10,17,17,17,17,17,14],
+  'ß':[14,17,18,30,17,17,30]
 };
 
 function drawChar(g, x, y, sc, c){
@@ -2051,7 +2078,7 @@ function drawMiniShard(x, y, on){
 function drawWorldSel(){
   drawSky();
   px(0, 150, VW, 30, PAL.grass); px(0, 150, VW, 3, PAL.grassLip);
-  otxt('WAEHLE DEINE WELT', VW/2, 12, 2, '#fff', '#1c4a26', 'center');
+  otxt('WÄHLE DEINE WELT', VW/2, 12, 2, '#fff', '#1c4a26', 'center');
   for(let i=0;i<WORLDS.length;i++){
     const W = WORLDS[i];
     const x = 18 + i*98, y = 40, w = 88, h = 96;
@@ -2129,7 +2156,7 @@ function drawLevelSel(){
 function drawGameOver(){
   px(0, 0, VW, VH, 'rgba(20,15,35,0.78)');
   otxt('MIST!', VW/2, 42, 3, '#ff5a6a', '#4a0f18', 'center');
-  txt('Corvos Kraehen lachen dich aus...', VW/2, 80, '#ddd', 8, 'center');
+  txt('Corvos Krähen lachen dich aus...', VW/2, 80, '#ddd', 8, 'center');
   txt('"Zu langsam! Kraah!"', VW/2, 94, '#aaa', 8, 'center');
   if(Math.floor(gt*1.6)%2===0) txt('TIPPEN = Nochmal versuchen', VW/2, 130, '#fff', 9, 'center');
 }
