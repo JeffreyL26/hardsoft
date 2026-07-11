@@ -5,7 +5,7 @@
   "description": "Shelly on the Run - HTML5 canvas runner packaged with Capacitor",
   "scripts": {
     "sync": "cap sync android",
-    "build:android": "cd android && gradlew.bat assembleDebug"
+    "build:android": "npx cap sync android && cd android && gradlew.bat assembleDebug"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",
