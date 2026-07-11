@@ -437,7 +437,7 @@ const WORLDS = [
     ]
   }
 ];
-let curWorld = 0, curLvl = 0, selW = 0, selL = 0;
+let curWorld = 0, curLvl = 0;
 // In-Memory-Fortschritt (kein localStorage): done + beste Splitter-Zahl je Level
 const prog = WORLDS.map(w => w.levels.map(() => ({done:false, best:0})));
 const seenIntro = WORLDS.map(() => false);
@@ -448,10 +448,79 @@ function isUnlocked(w, l){
   return pw[pw.length-1].done;
 }
 function worldDone(w){ return prog[w].every(p => p.done); }
+
+// ---- Salat-Oekonomie: das Sammeln hat einen Zweck ----
+// Bei Levelabschluss wandert der eingesammelte Salat in die Bank;
+// am Snack-Stand auf der Weltkarte kauft man davon Upgrades.
+let saladBank = 0;
+let maxHearts = 3;        // per EXTRA-HERZ erweiterbar (max 5)
+let hasShield = false;    // SCHUTZPANZER: naechster Treffer kostet kein Herz
+let hasMagnet = false;    // SALAT-MAGNET: zieht Blaetter an
+
 function markDone(){
   const p = prog[curWorld][curLvl];
   p.done = true;
   p.best = Math.max(p.best, shardCount);
+  saladBank += saladCount;
+}
+function shardsTotal(){ return prog.reduce((a,w) => a + w.reduce((b,l) => b + l.best, 0), 0); }
+
+// ---- Weltkarte (Overworld im Super-Mario-Stil) ----
+// Lineare Knotenkette: 3 Level Wiesental, Snack-Stand, 3 Pilzwald, 3 Frostklippen.
+const MAP_W = 620;
+const MNODES = [
+  {x:44,  y:118, w:0, l:0}, {x:100, y:90,  w:0, l:1}, {x:156, y:120, w:0, l:2},
+  {x:206, y:86,  shop:true},
+  {x:258, y:116, w:1, l:0}, {x:314, y:86,  w:1, l:1}, {x:370, y:118, w:1, l:2},
+  {x:452, y:94,  w:2, l:0}, {x:508, y:124, w:2, l:1}, {x:566, y:90,  w:2, l:2}
+];
+let mapPos = 0, mapTarget = null, mapStep = null;   // mapStep = {from,to,t}
+let mapShellyX = MNODES[0].x, mapShellyY = MNODES[0].y, mapCamX = 0, mapDir = 1;
+function nodeUnlocked(n){ return n.shop ? isUnlocked(1, 0) : isUnlocked(n.w, n.l); }
+function nodeIndexOf(w, l){ return MNODES.findIndex(n => !n.shop && n.w === w && n.l === l); }
+
+// ---- Snack-Stand: Sortiment ----
+let shopSel = 0;
+const SHOP_ITEMS = [
+  { name:'EXTRA-HERZ',
+    desc:['+1 Herz', '(dauerhaft)'],
+    price(){ return maxHearts >= 5 ? null : (maxHearts === 3 ? 60 : 120); },
+    owned(){ return maxHearts >= 5 ? 'MAX' : null; },
+    buy(){ maxHearts++; } },
+  { name:'SCHUTZPANZER',
+    desc:['1 Treffer', 'wird geblockt'],
+    price(){ return hasShield ? null : 30; },
+    owned(){ return hasShield ? 'AKTIV' : null; },
+    buy(){ hasShield = true; } },
+  { name:'SALAT-MAGNET',
+    desc:['zieht Salat', 'von selbst an'],
+    price(){ return hasMagnet ? null : 100; },
+    owned(){ return hasMagnet ? 'AKTIV' : null; },
+    buy(){ hasMagnet = true; } }
+];
+function buyShopItem(i){
+  const it = SHOP_ITEMS[i], pr = it.price();
+  if(pr === null){ AU.click(); return; }
+  if(saladBank < pr){ AU.hurt(); return; }
+  saladBank -= pr; it.buy(); AU.buy();
+}
+function activateNode(){
+  const n = MNODES[mapPos];
+  AU.click();
+  if(n.shop){ shopSel = 0; state = 'shop'; stateT = 0; }
+  else startLevel(n.w, n.l);
+}
+// Nach einem Levelabschluss: zurueck auf den gespielten Knoten; wenn dadurch
+// der naechste Knoten aufging, laeuft Shelly automatisch hin (Mario-Feeling).
+function returnToMap(){
+  const idx = nodeIndexOf(curWorld, curLvl);
+  if(idx >= 0){
+    mapPos = idx; mapStep = null; mapTarget = null;
+    mapShellyX = MNODES[idx].x; mapShellyY = MNODES[idx].y;
+    mapCamX = Math.max(0, Math.min(mapShellyX - 150, MAP_W - VW));
+    if(idx + 1 < MNODES.length && nodeUnlocked(MNODES[idx+1])) mapTarget = idx + 1;
+  }
+  state = 'map'; stateT = 0;
 }
 
 // Tile-Codes
@@ -946,6 +1015,8 @@ const AU = {
   checkpoint(){ [523,784].forEach((f,i)=>this.tone(f, 0, i*0.09, 0.15, 'square', 0.13)); },
   turn(){ this.tone(520, 260, 0, 0.09, 'square', 0.12); },              // Panzer-Kickturn
   spring(){ this.tone(220, 880, 0, 0.22, 'triangle', 0.22); },          // Pilz-Feder "Boing"
+  buy(){ [660, 880, 990].forEach((f,i)=>this.tone(f, 0, i*0.06, 0.1, 'square', 0.13)); }, // Kassen-Jingle
+  shieldHit(){ this.tone(520, 140, 0, 0.16, 'square', 0.2); this.noise(0, 0.08, 0.1); },  // Panzer-Klong
   door(){ this.tone(120, 60, 0, 0.5, 'sawtooth', 0.22); this.noise(0, 0.3, 0.15); },
   bossHit(){ this.tone(250, 80, 0, 0.2, 'square', 0.2); this.noise(0, 0.12, 0.14); },
   fanfare(){ [523,659,784,1047].forEach((f,i)=>this.tone(f, 0, i*0.13, i===3?0.5:0.14, 'square', 0.15)); },
@@ -994,7 +1065,7 @@ function applyTheme(theme){
 }
 
 function startLevel(w, l){    // Theme laden; Story-Card nur beim ersten Betreten der Welt
-  curWorld = w; curLvl = l; selW = w; selL = l;
+  curWorld = w; curLvl = l;
   applyTheme(WORLDS[w].theme);
   if(!seenIntro[w]){ seenIntro[w] = true; state = 'intro'; stateT = 0; }
   else startRun();
@@ -1002,7 +1073,7 @@ function startLevel(w, l){    // Theme laden; Story-Card nur beim ersten Betrete
 
 function startRun(){          // kompletter Neustart des Levels (Checkpoint resettet)
   buildLevel(); buildHints();
-  hearts = 3; saladCount = 0; shardCount = 0; bossDead = false;
+  hearts = maxHearts; saladCount = 0; shardCount = 0; bossDead = false;
   particles = []; playT = 0; zip = null; flashT = 0;
   respawnPlayer(); P.invulnT = 0;
   state = 'play'; stateT = 0;
@@ -1026,44 +1097,44 @@ function jumpNow(){ jumpBufT = gt; lastTapT = gt; }   // sofortiger Sprung-Trigg
 function tap(cp){
   if(state === 'play'){ padJumpPending = true; }       // Entscheidung (Sprung/Rollen) faellt in updatePlayer()
   else if(state === 'pause'){ if(stateT > 0.15){ state = 'play'; stateT = 0; holdT = -9; } } // Resume-Tap darf kein Rollen ausloesen
-  else if(state === 'worldsel'){
+  else if(state === 'map'){
     if(stateT < 0.3) return;
     if(cp){
-      const i = Math.floor((cp.x - 16) / 98);          // 3 Karten a 90px + 8 Abstand
-      if(i >= 0 && i < WORLDS.length && cp.y > 36 && cp.y < 140) selW = i;
-      else return;
+      // Knoten-Hit-Test (Weltkoordinaten der Karte)
+      const wx = cp.x + mapCamX;
+      let hit = -1;
+      for(let i=0;i<MNODES.length;i++){
+        const n = MNODES[i];
+        if(Math.abs(wx - n.x) <= 14 && Math.abs(cp.y - n.y) <= 15){ hit = i; break; }
+      }
+      if(hit < 0) return;
+      if(hit === mapPos && !mapStep){ activateNode(); return; }
+      if(!nodeUnlocked(MNODES[hit])){ AU.hurt(); return; }
+      mapTarget = hit; AU.click();
+    } else if(!mapStep){
+      activateNode();                                   // Tastatur: Space am Knoten
     }
-    if(!isUnlocked(selW, 0)){ AU.hurt(); return; }      // gesperrt
-    AU.click(); selL = 0;
-    applyTheme(WORLDS[selW].theme);                     // Menue-Himmel im Welt-Look
-    state = 'levelsel'; stateT = 0;
   }
-  else if(state === 'levelsel'){
-    if(stateT < 0.3) return;
+  else if(state === 'shop'){
+    if(stateT < 0.25) return;
     if(cp){
-      if(cp.x < 52 && cp.y < 34){ AU.click(); state = 'worldsel'; stateT = 0; return; } // Zurueck
-      const i = Math.floor((cp.x - 40) / 84);          // 3 Buttons a 72px + 12 Abstand
-      if(i >= 0 && i < 3 && cp.y > 56 && cp.y < 140) selL = i;
-      else return;
+      if(cp.y < 36 || cp.y > 160){ AU.click(); state = 'map'; stateT = 0; return; }  // ausserhalb = zurueck
+      const i = Math.floor((cp.x - 16) / 98);
+      if(i >= 0 && i < 3 && cp.y > 44 && cp.y < 146){ shopSel = i; buyShopItem(i); }
+      else { AU.click(); state = 'map'; stateT = 0; }
+    } else {
+      buyShopItem(shopSel);                             // Tastatur: Space kauft
     }
-    if(!isUnlocked(selW, selL)){ AU.hurt(); return; }
-    AU.click();
-    startLevel(selW, selL);
   }
   else menuAdvance();
 }
 function menuAdvance(){
   if(stateT < 0.5) return; // Doppel-Tipp-Schutz
   AU.click();
-  if(state === 'title'){ state = 'worldsel'; stateT = 0; }
+  if(state === 'title'){ state = 'map'; stateT = 0; }
   else if(state === 'intro'){ startRun(); }
   else if(state === 'gameover'){ startRun(); }
-  else if(state === 'win'){
-    const W = WORLDS[curWorld];
-    if(curLvl + 1 < W.levels.length) startLevel(curWorld, curLvl + 1);
-    else if(curWorld + 1 < WORLDS.length) startLevel(curWorld + 1, 0);
-    else { state = 'worldsel'; stateT = 0; }
-  }
+  else if(state === 'win'){ returnToMap(); }
 }
 
 // Bildschirm-Koordinaten -> Canvas-Koordinaten (fuer den Mute-Button)
@@ -1076,14 +1147,22 @@ function canvasPos(e){
 addEventListener('keydown', e => {
   if(e.repeat) return;
   AU.init(); AU.resume();
-  if((state === 'worldsel' || state === 'levelsel') && (e.code==='ArrowLeft' || e.code==='ArrowRight')){
-    const dlt = e.code==='ArrowLeft' ? -1 : 1;
-    if(state === 'worldsel') selW = Math.max(0, Math.min(WORLDS.length-1, selW + dlt));
-    else selL = Math.max(0, Math.min(WORLDS[selW].levels.length-1, selL + dlt));
-    AU.click(); e.preventDefault(); return;
+  if(state === 'map' && (e.code==='ArrowLeft' || e.code==='ArrowRight')){
+    const nxt = (mapTarget !== null ? mapTarget : mapPos) + (e.code==='ArrowLeft' ? -1 : 1);
+    if(nxt >= 0 && nxt < MNODES.length){
+      if(nodeUnlocked(MNODES[nxt])){ mapTarget = nxt; AU.click(); }
+      else AU.hurt();
+    }
+    e.preventDefault(); return;
   }
-  if(state === 'levelsel' && (e.code==='Backspace' || e.code==='Escape')){
-    state = 'worldsel'; stateT = 0; AU.click(); e.preventDefault(); return;
+  if(state === 'shop'){
+    if(e.code==='ArrowLeft' || e.code==='ArrowRight'){
+      shopSel = Math.max(0, Math.min(2, shopSel + (e.code==='ArrowLeft' ? -1 : 1)));
+      AU.click(); e.preventDefault(); return;
+    }
+    if(e.code==='Backspace' || e.code==='Escape'){
+      state = 'map'; stateT = 0; AU.click(); e.preventDefault(); return;
+    }
   }
   if(e.code==='Space' || e.code==='ArrowUp' || e.code==='KeyW'){
     if(state === 'play') jumpNow();        // Tastatur: keine Tap/Halten-Ambiguitaet -> sofort
@@ -1131,6 +1210,16 @@ addEventListener('blur', () => { pointerHeld = false; keyRoll = false; activePoi
 // ============================================================
 function hurt(knock){
   if(P.invulnT > 0) return;
+  // SCHUTZPANZER (Shop-Upgrade): faengt genau einen Treffer ab
+  if(hasShield){
+    hasShield = false;
+    vib(20); AU.shieldHit();
+    puff(P.x+7, P.y+8, PAL.ice, 6);
+    puff(P.x+7, P.y+8, '#ffffff', 3);
+    P.invulnT = 1.4;
+    if(knock){ P.vy = -160; P.vx = BASE_SPD*0.4; }
+    return;
+  }
   hearts--;
   vib(30); AU.hurt();
   cam.shake = Math.max(cam.shake, 3);
@@ -1321,6 +1410,20 @@ function updatePlayer(dt){
     vib(20); AU.checkpoint();
   }
 
+  // --- Salat-Magnet (Shop-Upgrade): Blaetter driften zu Shelly ---
+  if(hasMagnet){
+    const mx = P.x + P.w/2, my = P.y + P.h/2;
+    for(const it of collectibles){
+      if(it.got || it.kind !== 'salad') continue;
+      const dx = mx - (it.x+3), dy = my - (it.y+3), d2 = dx*dx + dy*dy;
+      if(d2 < 2600 && d2 > 4){
+        const dd = Math.sqrt(d2);
+        it.x += dx/dd * 150 * dt;
+        it.y += dy/dd * 150 * dt;
+      }
+    }
+  }
+
   // --- Collectibles ---
   for(const it of collectibles){
     if(it.got) continue;
@@ -1468,6 +1571,32 @@ function update(dt){
     cam.x += (target - cam.x)*Math.min(1, 12*dt);
     const targetY = Math.max(0, Math.min(P.y - VH*0.55, MAPH*TILE - VH));
     cam.y += (targetY - cam.y)*Math.min(1, 8*dt);
+  } else if(state === 'map'){
+    // Overworld: Shelly laeuft die Knotenkette entlang (nur Freigeschaltetes)
+    if(mapTarget !== null && !mapStep && mapTarget !== mapPos){
+      const nxt = mapPos + (mapTarget > mapPos ? 1 : -1);
+      if(nodeUnlocked(MNODES[nxt])) mapStep = {from: mapPos, to: nxt, t: 0};
+      else mapTarget = null;
+    }
+    if(mapStep){
+      mapStep.t += dt * 2.2;
+      const a = MNODES[mapStep.from], b = MNODES[mapStep.to];
+      const tt = Math.min(1, mapStep.t);
+      const e = tt < 0.5 ? 2*tt*tt : 1 - Math.pow(-2*tt+2, 2)/2;   // ease in-out
+      mapDir = b.x > a.x ? 1 : -1;
+      mapShellyX = a.x + (b.x - a.x)*e;
+      mapShellyY = a.y + (b.y - a.y)*e - Math.abs(Math.sin(tt*Math.PI*3))*3;  // Hopser
+      if(tt >= 1){
+        mapPos = mapStep.to; mapStep = null;
+        if(mapTarget === mapPos){ mapTarget = null; AU.click(); }
+      }
+    } else {
+      mapShellyX = MNODES[mapPos].x;
+      mapShellyY = MNODES[mapPos].y + Math.round(Math.sin(gt*3))*1;  // Idle-Wippen
+    }
+    const mtgt = Math.max(0, Math.min(mapShellyX - 150, MAP_W - VW));
+    mapCamX += (mtgt - mapCamX)*Math.min(1, 10*dt);
+    updateParticles(dt);
   } else if(state === 'pause'){
     // eingefroren – nur auf Tipp warten
   } else if(state === 'clear'){
@@ -1975,9 +2104,17 @@ function drawMuteIcon(){
   }
 }
 function drawHUD(){
-  // linkes Panel: Herzen + Salat
-  hudPanel(3, 3, 42, 22);
-  for(let i=0;i<3;i++) drawHeart(7+i*10, 6, i < hearts);
+  // linkes Panel: Herzen (bis 5 per Shop) + Schild + Salat
+  const shieldW = hasShield ? 11 : 0;
+  hudPanel(3, 3, Math.max(42, 8 + maxHearts*10 + shieldW), 22);
+  for(let i=0;i<maxHearts;i++) drawHeart(7+i*10, 6, i < hearts);
+  if(hasShield){
+    const sx = 7 + maxHearts*10 + 1;
+    px(sx, 6, 8, 6, PAL.iceDeep);          // Schutzpanzer-Icon
+    px(sx+1, 5, 6, 2, PAL.ice);
+    px(sx+1, 7, 2, 2, PAL.iceHi);
+    px(sx+1, 11, 6, 1, PAL.iceDk);
+  }
   px(7, 15, 7, 5, PAL.salad); px(8, 14, 5, 2, PAL.salad);
   px(8, 15, 2, 1, PAL.saladHi); px(10, 15, 1, 5, PAL.saladDark);
   txt('X'+saladCount, 17, 15, '#fff', 8);
@@ -2045,7 +2182,7 @@ function drawTitle(){
   px(ox, oy-4, 2, 2, PAL.bowDark);
   px(ox-4, oy+18, 5, 5, PAL.bodyDark); px(ox+6, oy+18, 5, 5, PAL.bodyDark);
   if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder LEERTASTE', VW/2, 156, '#fff', 9, 'center');
-  txt('PROTOTYP v0.5 - 3 WELTEN, 9 LEVEL', VW/2, 169, '#ffffffaa', 6, 'center');
+  txt('PROTOTYP v0.6 - WELTKARTE + SNACK-STAND', VW/2, 169, '#ffffffaa', 6, 'center');
   drawMuteIcon();
 }
 
@@ -2075,82 +2212,209 @@ function drawMiniShard(x, y, on){
 }
 
 // Welt-Auswahl: 3 Karten
-function drawWorldSel(){
-  drawSky();
-  px(0, 150, VW, 30, PAL.grass); px(0, 150, VW, 3, PAL.grassLip);
-  otxt('WÄHLE DEINE WELT', VW/2, 12, 2, '#fff', '#1c4a26', 'center');
-  for(let i=0;i<WORLDS.length;i++){
-    const W = WORLDS[i];
-    const x = 18 + i*98, y = 40, w = 88, h = 96;
-    const sel = i === selW, open = isUnlocked(i, 0);
-    px(x-3, y-3, w+6, h+6, sel ? PAL.gold : '#1f3a24');
-    px(x-1, y-1, w+2, h+2, sel ? PAL.goldHi : '#2e4a2e');
-    const T = Object.assign({}, PAL_BASE, W.theme);
-    px(x, y, w, h, T.sky1);
-    px(x, y+28, w, 12, T.hillFar);
-    px(x, y+38, w, 16, T.hillNear);
-    px(x, y+50, w, 12, T.grass);
-    px(x, y+50, w, 2, T.grassLip);
-    if(i === 0){                              // Wiesental: Blume + Sonne
-      px(x+14, y+42, 3, 8, T.grass);
-      px(x+12, y+38, 6, 5, PAL_BASE.flower); px(x+14, y+40, 2, 2, PAL.sun);
-      px(x+68, y+6, 8, 8, PAL.sun);
-    } else if(i === 1){                       // Pilzwald: Pilz
-      px(x+14, y+38, 6, 14, T.pebbleHi);
-      px(x+7, y+31, 20, 8, PAL.shroomCap);
-      px(x+10, y+27, 14, 5, PAL.shroomCap);
-      px(x+10, y+33, 3, 3, '#fff'); px(x+19, y+30, 3, 3, '#fff');
-    } else {                                  // Frostklippen: Schneeflocke + Eiszapfen
-      px(x+66, y+8, 2, 10, '#fff'); px(x+62, y+12, 10, 2, '#fff');
-      px(x+63, y+9, 2, 2, '#fff'); px(x+69, y+9, 2, 2, '#fff');
-      px(x+63, y+15, 2, 2, '#fff'); px(x+69, y+15, 2, 2, '#fff');
-      px(x+12, y+50, 3, 6, PAL.ice); px(x+18, y+50, 3, 9, PAL.ice); px(x+24, y+50, 3, 5, PAL.ice);
-    }
-    if(!open){                                // gesperrt: abdunkeln + Schloss
-      ctx.fillStyle = 'rgba(20,25,35,0.62)'; ctx.fillRect(x, y, w, h);
-      drawLock(x+w/2-4, y+30, '#cfd6de');
-    }
-    txt(W.sub, x+w/2, y+66, '#fff', 8, 'center');
-    txt(W.name, x+w/2, y+76, open ? '#ffe9a0' : '#9aa4ae', 7, 'center');
-    if(worldDone(i)) txt('FERTIG!', x+w/2, y+5, '#7ed957', 7, 'center');
-    else if(open){
-      const n = prog[i].filter(p=>p.done).length;
-      txt(n + '/' + WORLDS[i].levels.length, x+w/2, y+86, '#ffffffcc', 7, 'center');
-    }
+// ============================================================
+// WELTKARTE (Overworld) – Shelly laeuft von Knoten zu Knoten
+// ============================================================
+const ZONE_COLS = WORLDS.map(w => Object.assign({}, PAL_BASE, w.theme));
+const ZONE_EDGE = [232, 411];   // x-Grenzen Wiese|Pilzwald|Frost
+function mapZoneAt(x){ return x < ZONE_EDGE[0] ? 0 : x < ZONE_EDGE[1] ? 1 : 2; }
+
+function drawMapDeco(sx, y, zone, v){
+  const T = ZONE_COLS[zone];
+  if(zone === 0){
+    if(v === 0){ px(sx+1, y-4, 1, 4, T.grassDk); px(sx, y-7, 3, 3, PAL_BASE.flower); px(sx+1, y-6, 1, 1, PAL.sun); }
+    else if(v === 1){ px(sx-2, y-3, 7, 3, T.grassDk); px(sx-1, y-4, 5, 1, T.grassDk); }
+    else { px(sx, y-3, 1, 3, T.grassDk); px(sx+2, y-4, 1, 4, T.grassDk); px(sx+4, y-2, 1, 2, T.grassDk); }
+  } else if(zone === 1){
+    if(v === 0){ px(sx+1, y-3, 2, 3, PAL.shroomStem); px(sx-1, y-6, 6, 3, PAL.shroomCap); px(sx, y-5, 1, 1, '#fff'); px(sx+3, y-6, 1, 1, '#fff'); }
+    else { px(sx+1, y-2, 2, 2, T.dirtMid); px(sx-1, y-7, 6, 5, T.treeFarDk); px(sx, y-9, 4, 3, T.treeFar); }
+  } else {
+    if(v === 0){ px(sx+1, y-2, 2, 2, T.dirtMid); px(sx-1, y-5, 6, 3, T.treeFarDk); px(sx, y-8, 4, 3, T.treeFar); px(sx, y-9, 4, 1, '#fff'); }
+    else { px(sx-1, y-2, 6, 2, '#fff'); px(sx, y-3, 4, 1, '#fff'); }
   }
-  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder PFEILE + LEER', VW/2, 154, '#fff', 8, 'center');
-  txt('FORTSCHRITT NUR IM SPEICHER (PROTOTYP)', VW/2, 168, '#ffffff88', 6, 'center');
 }
 
-// Level-Auswahl innerhalb einer Welt: 3 grosse Buttons mit Splitter-Bestwert
-function drawLevelSel(){
-  drawSky();
-  px(0, 150, VW, 30, PAL.grass); px(0, 150, VW, 3, PAL.grassLip);
-  const W = WORLDS[selW];
-  otxt(W.sub + ': ' + W.name, VW/2, 12, 2, '#fff', '#1c4a26', 'center');
-  // Zurueck-Button
-  px(6, 8, 40, 18, '#1f3a24'); px(8, 10, 36, 14, '#2e4a2e');
-  txt('<', 16, 13, PAL.goldHi, 9); txt('ZUR.', 22, 14, '#fff', 7);
-  for(let i=0;i<W.levels.length;i++){
-    const L = W.levels[i];
-    const x = 44 + i*84, y = 60, w = 64, h = 72;
-    const sel = i === selL, open = isUnlocked(selW, i), p = prog[selW][i];
-    px(x-3, y-3, w+6, h+6, sel ? PAL.gold : '#1f3a24');
-    px(x-1, y-1, w+2, h+2, sel ? PAL.goldHi : '#2e4a2e');
-    px(x, y, w, h, open ? '#f7efd2' : '#8a8f96');
-    px(x, y, w, 2, open ? '#fffbe8' : '#9aa0a8');
-    if(open){
-      otxt(String(i+1), x+w/2, y+8, 3, '#2e7d32', '#1c4a26', 'center');
-      for(let s=0;s<3;s++) drawMiniShard(x+w/2-14+s*10, y+36, s < p.best);
-      if(p.done) txt('OK!', x+w/2, y+52, '#2e9e46', 8, 'center');
-      else txt(i === 2 ? 'FINALE' : '', x+w/2, y+53, '#8a5a33', 6, 'center');
-    } else {
-      drawLock(x+w/2-4, y+18, '#5c636b');
-      txt('GESPERRT', x+w/2, y+52, '#5c636b', 6, 'center');
-    }
-    txt(L.name, x+w/2, y+h+4, open ? '#fff' : '#ffffff88', 6, 'center');
+function drawMapShelly(sx, sy){
+  const d = mapDir;
+  px(sx-6, sy+2, 12, 2, PAL.board);                  // Board
+  px(sx-4, sy+4, 2, 2, PAL.wheel); px(sx+2, sy+4, 2, 2, PAL.wheel);
+  px(sx-5, sy-5, 9, 7, PAL.shell);                   // Panzer
+  px(sx-4, sy-6, 7, 2, PAL.shellHi);
+  px(sx+(d>0?3:-8), sy-7, 5, 5, PAL.body);           // Kopf in Laufrichtung
+  px(sx+(d>0?5:-7), sy-6, 1, 1, '#123');
+  px(sx+(d>0?-5:2), sy-8, 3, 2, PAL.bow);            // Schleife
+}
+
+function drawMap(){
+  const cx = Math.round(mapCamX);
+  // Himmel-Streifen
+  px(0, 0, VW, 46, PAL_BASE.sky2);
+  px(0, 40, VW, 6, PAL_BASE.sky3);
+  // Bodenflaechen je Zone (mit Dither-Uebergang)
+  for(let z=0; z<3; z++){
+    const x0 = z === 0 ? 0 : ZONE_EDGE[z-1], x1 = z < 2 ? ZONE_EDGE[z] : MAP_W;
+    const sx = Math.max(0, x0-cx), ex = Math.min(VW, x1-cx);
+    if(ex <= sx) continue;
+    const T = ZONE_COLS[z];
+    px(sx, 44, ex-sx, 110, T.grass);
+    px(sx, 44, ex-sx, 3, T.grassLip);
+    px(sx, 146, ex-sx, 8, T.grassDk);
   }
-  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder PFEILE + LEER', VW/2, 154, '#fff', 8, 'center');
+  for(const gx of ZONE_EDGE){                        // 8px-Schachbrett am Zonenwechsel
+    const z = mapZoneAt(gx-1), T2 = ZONE_COLS[z+1];
+    for(let yy=44; yy<154; yy+=4)
+      for(let k=0; k<2; k++)
+        if((yy/4 + k) % 2 === 0) px(gx-8+k*4 - cx, yy, 4, 4, T2.grass);
+  }
+  // Deko (deterministisch verteilt, ober- und unterhalb der Knotenreihe)
+  for(let i=0; i<46; i++){
+    const dx = (i*67 + hash(i*13)%41) % MAP_W;
+    const band = hash(i*7)%2;
+    const dy = band ? 66 + hash(i*3)%8 : 138 + hash(i*3)%9;
+    const sx = dx - cx;
+    if(sx < -10 || sx > VW+10) continue;
+    // nicht auf Knoten malen
+    let near = false;
+    for(const n of MNODES) if(Math.abs(n.x-dx) < 20 && Math.abs(n.y-dy) < 24){ near = true; break; }
+    if(near) continue;
+    drawMapDeco(sx, dy, mapZoneAt(dx), hash(i*29)%3);
+  }
+  // Zonen-Titel
+  const zc = [[116,'WIESENTAL'],[321,'PILZWALD'],[515,'FROSTKLIPPEN']];
+  zc.forEach(([zx, name], i) => {
+    txt('WELT ' + (i+1), zx - cx, 26, '#ffffffcc', 7, 'center');
+    txt(name + (worldDone(i) ? ' !' : ''), zx - cx, 35, '#fff', 8, 'center');
+  });
+  // Pfad: gepunktete Linien (golden = begehbar)
+  for(let i=0; i<MNODES.length-1; i++){
+    const a = MNODES[i], b = MNODES[i+1];
+    const open = nodeUnlocked(b);
+    const dist = Math.hypot(b.x-a.x, b.y-a.y), n = Math.floor(dist/8);
+    for(let k=1; k<n; k++){
+      const t = k/n;
+      px(a.x + (b.x-a.x)*t - cx - 1, a.y + (b.y-a.y)*t - 1, 2, 2,
+         open ? PAL.gold : '#00000033');
+    }
+  }
+  // Knoten
+  for(let i=0; i<MNODES.length; i++){
+    const n = MNODES[i], sx = n.x - cx;
+    if(sx < -30 || sx > VW+30) continue;
+    const open = nodeUnlocked(n);
+    if(n.shop){
+      // Snack-Stand: Huette mit Markise
+      px(sx-9, n.y-3, 18, 9, PAL.log);
+      px(sx-9, n.y-3, 18, 2, PAL.logDark);
+      px(sx-11, n.y-9, 22, 6, '#e04a3a');            // Markise
+      for(let k=0; k<3; k++) px(sx-11+4+k*8, n.y-9, 4, 6, '#fff');
+      px(sx-11, n.y-4, 22, 1, '#8f2419');
+      px(sx-3, n.y-1, 6, 5, PAL.doorDark);           // Fenster
+      px(sx-7, n.y, 4, 3, PAL.salad);                // Salat in der Auslage
+      px(sx+4, n.y, 3, 3, PAL.salad);
+      if(!open){ ctx.fillStyle = 'rgba(20,25,35,0.55)'; ctx.fillRect(sx-11, n.y-9, 22, 16); drawLock(sx-4, n.y-8, '#dfe4ea'); }
+    } else {
+      const p = prog[n.w][n.l];
+      const isNext = open && !p.done;
+      // Plaettchen
+      const base = !open ? '#5c636b' : p.done ? '#3fae5a' : '#d84a3e';
+      if(isNext && Math.floor(gt*2)%2 === 0){        // Puls-Ring am naechsten Level
+        px(sx-11, n.y-9, 22, 18, PAL.goldHi);
+      }
+      px(sx-9, n.y-7, 18, 14, '#1f3a24');
+      px(sx-8, n.y-6, 16, 12, base);
+      px(sx-8, n.y-6, 16, 2, '#ffffff44');
+      txt(String(n.l+1), sx, n.y-4, '#fff', 8, 'center');
+      if(!open) drawLock(sx-4, n.y-20, '#3f454c');
+      else {
+        for(let s=0; s<3; s++) drawMiniShard(sx-10+s*7, n.y-19, s < p.best);
+        if(n.l === 2 && !p.done){                    // Kaefig-Silhouette am Welt-Finale
+          const W = WORLDS[n.w];
+          px(sx+11, n.y-18, 8, 8, '#00000022');
+          for(let k=0; k<3; k++) px(sx+11+k*3, n.y-18, 1, 8, PAL.goldDk);
+          px(sx+13, n.y-14, 3, 3, W.buddyC1);
+        }
+      }
+    }
+  }
+  // Shelly auf der Karte
+  drawMapShelly(Math.round(mapShellyX - cx), Math.round(mapShellyY - 8));
+  // Info-Leiste unten
+  const cur = MNODES[mapTarget !== null ? mapTarget : mapPos];
+  px(0, 154, VW, 26, '#101f1a');
+  px(0, 154, VW, 1, PAL.gold);
+  if(cur.shop){
+    txt('SHELLYS SNACK-STAND', 8, 158, PAL.goldHi, 8);
+    txt('Upgrades gegen Salat!', 8, 168, '#cfe0d0', 7);
+    if(!mapStep && MNODES[mapPos].shop && Math.floor(gt*1.6)%2===0)
+      txt('TIPPEN = EINKAUFEN', VW-10, 162, '#fff', 8, 'right');
+  } else {
+    const W = WORLDS[cur.w], p = prog[cur.w][cur.l];
+    txt('WELT ' + (cur.w+1) + '-' + (cur.l+1) + ': ' + W.levels[cur.l].name, 8, 158, '#fff', 8);
+    for(let s=0; s<3; s++) drawMiniShard(8+s*8, 168, s < p.best);
+    if(p.done) txt('GESCHAFFT', 36, 168, '#7ed957', 7);
+    if(!mapStep && !MNODES[mapPos].shop && MNODES[mapPos] === cur && Math.floor(gt*1.6)%2===0)
+      txt('TIPPEN = START', VW-10, 162, '#fff', 8, 'right');
+  }
+  // HUD oben: Salat-Bank + Splitter-Bilanz
+  hudPanel(3, 3, 58, 13);
+  px(7, 6, 7, 5, PAL.salad); px(8, 5, 5, 2, PAL.salad); px(10, 6, 1, 5, PAL.saladDark);
+  txt(String(saladBank), 18, 6, '#fff', 8);
+  const totalAll = WORLDS.reduce((a,w) => a + w.levels.length*3, 0);
+  hudPanel(VW-62, 3, 59, 13);
+  px(VW-58, 5, 4, 2, PAL.shardHi); px(VW-59, 7, 6, 4, PAL.shard); px(VW-58, 11, 4, 2, PAL.shard);
+  txt(shardsTotal() + '/' + totalAll, VW-50, 6, '#fff', 8);
+}
+
+// ============================================================
+// SNACK-STAND (Shop) – Salat gegen Upgrades
+// ============================================================
+function drawShopIcon(i, x, y){
+  if(i === 0){                                       // Herz
+    px(x, y, 4, 3, PAL.heart); px(x+6, y, 4, 3, PAL.heart);
+    px(x, y+3, 10, 3, PAL.heart);
+    px(x+1, y+6, 8, 2, PAL.heartDark);
+    px(x+3, y+8, 4, 2, PAL.heartDark);
+    px(x+1, y+1, 2, 1, '#ffc2c9');
+  } else if(i === 1){                                // Schutzpanzer
+    px(x+1, y, 8, 2, PAL.ice);
+    px(x, y+2, 10, 5, PAL.iceDeep);
+    px(x+1, y+2, 3, 2, PAL.iceHi);
+    px(x+1, y+7, 8, 2, PAL.iceDk);
+    px(x+3, y+9, 4, 1, PAL.iceDk);
+  } else {                                           // Magnet
+    px(x, y, 3, 7, '#d84a3e'); px(x+7, y, 3, 7, '#d84a3e');
+    px(x, y, 10, 3, '#d84a3e');
+    px(x+3, y+3, 4, 4, '#00000000');
+    px(x, y+7, 3, 3, '#fff'); px(x+7, y+7, 3, 3, '#fff');
+  }
+}
+function drawShop(){
+  drawMap();
+  px(0, 0, VW, VH, 'rgba(15,25,20,0.72)');
+  const p = panel(300, 132);
+  txt('SHELLYS SNACK-STAND', VW/2, p.y+6, '#8a5a33', 10, 'center');
+  for(let i=0; i<3; i++){
+    const it = SHOP_ITEMS[i];
+    const x = p.x + 8 + i*96, y = p.y + 22, w = 90, h = 84;
+    const sel = i === shopSel;
+    px(x-2, y-2, w+4, h+4, sel ? PAL.gold : '#2e4a2e');
+    px(x, y, w, h, '#fffbe8');
+    drawShopIcon(i, x + w/2 - 5, y + 6);
+    txt(it.name, x+w/2, y+22, '#33424e', 8, 'center');
+    txt(it.desc[0], x+w/2, y+36, '#6b7a86', 7, 'center');
+    txt(it.desc[1], x+w/2, y+45, '#6b7a86', 7, 'center');
+    const pr = it.price(), owned = it.owned();
+    if(owned){
+      txt(owned, x+w/2, y+62, '#2e9e46', 9, 'center');
+    } else {
+      px(x+w/2-18, y+61, 7, 5, PAL.salad); px(x+w/2-17, y+60, 5, 2, PAL.salad);
+      txt(String(pr), x+w/2+8, y+60, saladBank >= pr ? '#8a5a33' : '#c0392b', 9, 'center');
+    }
+  }
+  // Fussleiste: Vorrat links, Hinweis rechts
+  px(p.x+10, p.y+112, 7, 5, PAL.salad); px(p.x+11, p.y+111, 5, 2, PAL.salad);
+  txt('VORRAT: ' + saladBank, p.x+21, p.y+110, '#33424e', 8);
+  if(Math.floor(gt*1.6)%2===0) txt('DANEBEN TIPPEN = KARTE', p.x+292, p.y+111, '#8a5a33', 7, 'right');
 }
 
 function drawGameOver(){
@@ -2181,22 +2445,18 @@ function drawWin(){
     txt('Weiter geht die Rettungsfahrt!', VW/2, 88, '#eee', 8, 'center');
   }
   // Statistik-Zeilen mit Trennlinie
-  px(VW/2-70, 106, 140, 1, '#ffffff33');
-  txt('Salat: ' + saladCount + ' / ' + totalSalad, VW/2, 113, '#8fe14f', 9, 'center');
+  px(VW/2-80, 106, 160, 1, '#ffffff33');
+  txt('Salat: ' + saladCount + ' / ' + totalSalad + '  (Vorrat: ' + saladBank + ')', VW/2, 113, '#8fe14f', 9, 'center');
   txt('Splitter: ' + shardCount + ' / ' + totalShards, VW/2, 125, PAL.shard, 9, 'center');
   txt('Zeit: ' + fmtTime(playT), VW/2, 137, '#fff', 9, 'center');
-  px(VW/2-70, 149, 140, 1, '#ffffff33');
-  const nextL = curLvl + 1 < W.levels.length, nextW = curWorld + 1 < WORLDS.length;
-  const prompt = nextL ? 'TIPPEN = WEITER ZU LEVEL ' + (curWorld+1) + '-' + (curLvl+2)
-               : nextW ? 'TIPPEN = WEITER ZU ' + WORLDS[curWorld+1].sub
-               : 'TIPPEN = WELT-AUSWAHL';
-  if(Math.floor(gt*1.6)%2===0) txt(prompt, VW/2, 158, '#fff', 8, 'center');
+  px(VW/2-80, 149, 160, 1, '#ffffff33');
+  if(Math.floor(gt*1.6)%2===0) txt('TIPPEN = ZUR KARTE', VW/2, 158, '#fff', 8, 'center');
 }
 
 function render(){
   if(state === 'title'){ drawTitle(); return; }
-  if(state === 'worldsel'){ drawWorldSel(); drawMuteIcon(); return; }
-  if(state === 'levelsel'){ drawLevelSel(); drawMuteIcon(); return; }
+  if(state === 'map'){ drawMap(); drawMuteIcon(); return; }
+  if(state === 'shop'){ drawShop(); drawMuteIcon(); return; }
   if(state === 'intro'){ drawIntro(); drawMuteIcon(); return; }
 
   // Welt (auch als Hintergrund fuer Overlays)
@@ -2267,6 +2527,10 @@ window.G = { P, get state(){return state;}, set state(s){state=s;}, get grid(){r
   get collectibles(){return collectibles;}, get cage(){return cage;}, get goal(){return goal;},
   get checkpoint(){return checkpoint;}, get curWorld(){return curWorld;}, get curLvl(){return curLvl;},
   get MAPH(){return MAPH;}, get MAPW(){return MAPW;}, applyTheme, WORLDS, prog,
+  get saladBank(){return saladBank;}, set saladBank(v){saladBank=v;},
+  get maxHearts(){return maxHearts;}, get hasShield(){return hasShield;}, get hasMagnet(){return hasMagnet;},
+  get mapPos(){return mapPos;}, set mapTarget(v){mapTarget=v;}, get mapTarget(){return mapTarget;},
+  get mapShellyX(){return mapShellyX;}, buyShopItem, MNODES,
   unlockAll(){ prog.forEach(w => w.forEach(l => l.done = true)); } };
 </script>
 </body>
