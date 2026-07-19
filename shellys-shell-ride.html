@@ -176,7 +176,7 @@ const SEGS2 = [
     4:  d(8)+G(2),
     5:  d(8)+G(2),
     6:  d(8)+G(2)+d(30)+'M'+d(53)+G(2),                        // E3-Pilz oben + Turm ab hier
-    7:  d(8)+G(2)+d(6)+'sss'+d(16)+'c'+d(4)+'M'+d(3)+'sss'+d(13)+'c'+d(9)+'sss'+d(11)+'Z'+d(9)+G(2),
+    7:  d(8)+G(2)+d(6)+'sss'+d(16)+'c'+d(4)+'M'+d(3)+'sss'+d(13)+'S'+d(9)+'sss'+d(11)+'Z'+d(9)+G(2),   // S = SPORA bewacht den Kaefig
     8:  d(8)+G(2)+d(2)+G(16)+d(3)+G(21)+d(3)+G(34)+d(5)+G(2),  // E3-Band (Durchstieg 10-11, Luecken 28-30, 52-54)
     9:  d(8)+G(2)+d(84)+G(2),
     10: d(8)+G(2)+d(84)+G(2),
@@ -303,7 +303,7 @@ const SEGS_W33 = [
     6:  d(8)+'*'+d(43)+G(2),
     7:  d(52)+G(2),
     8:  d(52)+G(2),
-    9:  d(4)+'Z'+d(5)+'sss'+d(4)+'z'+d(6)+'sss'+d(4)+'z'+d(6)+'sss'+d(4)+'*'+d(6)+G(2),
+    9:  d(4)+'Z'+d(5)+'sss'+d(4)+'z'+d(6)+'sss'+d(4)+'Y'+d(6)+'sss'+d(4)+'*'+d(6)+G(2),   // Y = FROSTFEDER bewacht Poppy
     10: d(2)+'I'.repeat(48)+d(2)+G(2),                         // Eis-Band oben (leise rollen!)
     11: d(30)+'*'+d(21)+G(2),
     12: d(51)+'M'+G(2),
@@ -770,6 +770,10 @@ const isSolid = t => t===T_GROUND || t===T_ROCK || t===T_LOG || t===T_DOOR || t=
 
 let MAPW = 0, grid = [], vgrid = [], SEGOFF = {};
 let spawns = [];          // Gegner-Spawn-Beschreibungen
+const BOSS_TYPES = ['boss', 'corvo', 'spora', 'frost'];
+let bossGate = false;     // Kaefig erst nach Boss-Sieg (Welt-Finale)
+let cageDeniedT = 0;      // "Waechter lebt noch"-Hinweis am Kaefig
+let shots = [];           // Boss-Geschosse (Sporen, Eiszapfen, Federn)
 let crumbles = [], crumbleAt = new Map();   // Broeckel-Platten: {c, r, t} (t<0 = intakt)
 let collectibles = [];    // Salat + Splitter (persistieren ueber Respawn)
 let cage = null, goal = null, playerStart = {x:32,y:120};
@@ -801,6 +805,8 @@ function buildLevel(){
         else if(ch==='v'){ spawns.push({type:'flyer', x:x+1, y:r*TILE+2}); }
         else if(ch==='B'){ spawns.push({type:'boss', x:x-4, y:groundY-22, doorX:(off+26)*TILE}); }
         else if(ch==='K'){ spawns.push({type:'corvo', x:x-4, y:groundY-22, doorX:(off+30)*TILE}); }
+        else if(ch==='S'){ spawns.push({type:'spora', x:x-2, y:groundY-20}); }
+        else if(ch==='Y'){ spawns.push({type:'frost', x:x-2, y:groundY-18}); }
         else if(ch==='Z'){ cage = {x:x-3, y:groundY-30, w:22, h:30, open:false}; }
         else if(ch==='F'){ goal = {x:x+2, y:groundY-44, w:12, h:44, reached:false}; }
         else if(CHAR2TILE[ch] !== undefined){
@@ -811,6 +817,8 @@ function buildLevel(){
     }
     off += s.w;
   }
+  // Lebt ein Boss im Level, bleibt der Kaefig zu, bis er besiegt ist
+  bossGate = spawns.some(s => BOSS_TYPES.includes(s.type));
   // Optionaler Checkpoint (Fahnenmast) pro Level, Position aus der Level-Definition.
   // dir wird beim Aktivieren gemerkt (Etagen-Level: Respawn in Fahrtrichtung).
   checkpoint = L.checkpoint
@@ -1301,7 +1309,8 @@ const AU = {
   turn(){ this.tone(520, 260, 0, 0.09, 'square', 0.12); },              // Panzer-Kickturn
   spring(){ this.tone(220, 880, 0, 0.22, 'triangle', 0.22); },          // Pilz-Feder "Boing"
   crumble(){ this.noise(0, 0.12, 0.1); this.tone(150, 70, 0, 0.15, 'triangle', 0.1); }, // Platte broeckelt
-  swoop(){ this.tone(500, 160, 0, 0.25, 'sawtooth', 0.1); },            // Corvos Sturzflug
+  swoop(){ this.tone(500, 160, 0, 0.25, 'sawtooth', 0.1); },            // Boss-Attacken-Ansage
+  spit(){ this.tone(320, 130, 0, 0.14, 'square', 0.1); },               // Sporas Sporen-Spucke
   buy(){ [660, 880, 990].forEach((f,i)=>this.tone(f, 0, i*0.06, 0.1, 'square', 0.13)); }, // Kassen-Jingle
   shieldHit(){ this.tone(520, 140, 0, 0.16, 'square', 0.2); this.noise(0, 0.08, 0.1); },  // Panzer-Klong
   door(){ this.tone(120, 60, 0, 0.5, 'sawtooth', 0.22); this.noise(0, 0.3, 0.15); },
@@ -1315,19 +1324,25 @@ function resetEnemies(){
   enemies = [];
   const wspd = curWorld*6;   // spaetere Welten = flottere Gegner
   for(const s of spawns){
-    if((s.type === 'boss' || s.type === 'corvo') && bossDead) continue;
+    if(BOSS_TYPES.includes(s.type) && bossDead) continue;
     if(s.type === 'guard')
       enemies.push({type:'guard', x:s.x, y:s.y, w:14, h:14, x0:s.x, dir:1, spd:28+wspd, alive:true, t:Math.random()*6});
     else if(s.type === 'sleeper')
       enemies.push({type:'sleeper', x:s.x, y:s.y, w:14, h:13, alive:true, awake:false, t:Math.random()*6});
     else if(s.type === 'flyer')
       enemies.push({type:'flyer', x:s.x, y:s.y, y0:s.y, w:14, h:12, x0:s.x, dir:-1, spd:32+wspd, alive:true, t:Math.random()*6});
-    else if(s.type === 'boss')
+    else if(s.type === 'boss')      // GRIMM, die Wache: Phase 2 = Sturmangriff
       enemies.push({type:'boss', x:s.x, y:s.y, w:22, h:22, x0:s.x, doorX:s.doorX, dir:1, spd:52,
-                    hp:3, hpMax:3, alive:true, stunT:0, flashT:0, t:0});
-    else if(s.type === 'corvo')
+                    hp:3, hpMax:3, alive:true, stunT:0, flashT:0, mode:'chase', modeT:1.5, dashDir:1, t:0});
+    else if(s.type === 'corvo')     // CORVO: Sprungjagd -> Federsturm -> Raserei
       enemies.push({type:'corvo', x:s.x, y:s.y, y0:s.y, w:22, h:22, x0:s.x, doorX:s.doorX, dir:1, spd:70,
-                    hp:5, hpMax:5, alive:true, stunT:0, flashT:0, vy:0, jumpT:1.4, t:0});
+                    hp:5, hpMax:5, alive:true, stunT:0, flashT:0, vy:0, jumpT:1.4, mode:'chase', actN:0, t:0});
+    else if(s.type === 'spora')     // SPORA: Pilzhut federt Stomps ab, nur erschoepft verwundbar
+      enemies.push({type:'spora', x:s.x, y:s.y, y0:s.y, w:18, h:20, x0:s.x, dir:-1,
+                    hp:3, hpMax:3, alive:true, stunT:0, flashT:0, mode:'idle', modeT:1.2, shotN:0, t:Math.random()*6});
+    else if(s.type === 'frost')     // FROSTFEDER: fliegt mit Eisstacheln, nur am Boden verwundbar
+      enemies.push({type:'frost', x:s.x, y:s.y, y0:s.y, w:18, h:16, x0:s.x, dir:-1,
+                    hp:3, hpMax:3, alive:true, stunT:0, flashT:0, mode:'glide', modeT:2.2, vy:0, t:Math.random()*6});
   }
 }
 
@@ -1356,6 +1371,7 @@ function respawnPlayer(){
     }
   }
   if(dirty) computeVGrid();
+  shots = [];
   resetEnemies();
 }
 
@@ -1375,7 +1391,7 @@ function startLevel(w, l){    // Theme laden; Story-Card nur beim ersten Betrete
 function startRun(){          // kompletter Neustart des Levels (Checkpoint resettet)
   buildLevel(); buildHints();
   hearts = maxHearts; saladCount = 0; shardCount = 0; bossDead = false;
-  particles = []; playT = 0; zip = null; flashT = 0;
+  particles = []; shots = []; playT = 0; zip = null; flashT = 0; cageDeniedT = 0;
   respawnPlayer(); P.invulnT = 0;
   state = 'play'; stateT = 0;
 }
@@ -1776,15 +1792,24 @@ function updatePlayer(dt){
     }
   }
 
-  // --- Kaefig (Welt-Finale) ---
+  // --- Kaefig (Welt-Finale): oeffnet erst, wenn der Waechter besiegt ist ---
   if(cage && !cage.open && overlap(P, cage)){
-    cage.open = true;
-    markDone();
-    state = 'rescue'; stateT = 0;
-    zip = {x:cage.x+8, y:cage.y+18, vy:0, hop:0};
-    P.vx = 0;
-    sparkle(cage.x+11, cage.y+10, PAL.shard);
-    AU.fanfare();
+    if(bossGate && !bossDead){
+      if(cageDeniedT <= 0){
+        cageDeniedT = 1.3;
+        P.dir *= -1; P.turnT = 0.12; P.vx = BASE_SPD; P.vy = -120;   // abgewiesen
+        AU.turn(); vib(15);
+        puff(P.x+P.w/2, P.y+P.h/2, PAL.gold, 4);
+      }
+    } else {
+      cage.open = true;
+      markDone();
+      state = 'rescue'; stateT = 0;
+      zip = {x:cage.x+8, y:cage.y+18, vy:0, hop:0};
+      P.vx = 0; shots = [];
+      sparkle(cage.x+11, cage.y+10, PAL.shard);
+      AU.fanfare();
+    }
   }
 
   // --- Zielflagge (normales Level-Ende) ---
@@ -1792,7 +1817,7 @@ function updatePlayer(dt){
     goal.reached = true;
     markDone();
     state = 'clear'; stateT = 0;
-    P.vx = 0;
+    P.vx = 0; shots = [];
     sparkle(goal.x+6, goal.y+6, PAL.gold);
     AU.fanfare(); vib(25);
   }
@@ -1828,30 +1853,145 @@ function updateEnemies(dt){
       if(e.x < e.x0-40){ e.x = e.x0-40; e.dir = 1; }
       e.y = e.y0 + Math.sin(e.t*2.4)*9;
     } else if(e.type === 'boss'){
+      // GRIMM, die Wache. Phase 1: Jagd (stompbar).
+      // Ab dem ersten Treffer: STURMANGRIFF - Ansage (Zittern), dann Dash,
+      // bei dem JEDER Kontakt schmerzt. Nur nach dem Wand-Crash (benommen)
+      // ist er wieder verwundbar. Bei 1 HP wird die Ansage kuerzer.
+      e.flashT = Math.max(0, e.flashT-dt);
+      const blo = e.x0-90, bhi = e.doorX - e.w - 4;
+      if(e.stunT > 0){ e.stunT -= dt; }
+      else {
+        e.modeT -= dt;
+        if(e.mode === 'tele'){
+          if(e.modeT <= 0){
+            e.mode = 'dash'; e.modeT = 2.5;
+            e.dashDir = P.x + P.w/2 > e.x + e.w/2 ? 1 : -1;
+            e.dir = e.dashDir; AU.swoop();
+          }
+        } else if(e.mode === 'dash'){
+          e.dir = e.dashDir;
+          e.x += e.dir*(e.hp <= 1 ? 235 : 185)*dt;
+          if(Math.random() < dt*24)
+            particles.push({x:e.x + (e.dir>0?0:e.w), y:e.y+e.h-2, vx:-e.dir*40, vy:-20,
+                            life:0.25, col:PAL.dust2, s:2});
+          if(e.x <= blo || e.x >= bhi || e.modeT <= 0){
+            e.x = Math.max(blo, Math.min(bhi, e.x));
+            e.mode = 'stun'; e.modeT = 1.5;               // Crash -> verwundbares Fenster
+            cam.shake = Math.max(cam.shake, 3); AU.stomp(); vib(20);
+            puff(e.x + (e.dir>0?e.w:0), e.y+e.h/2, PAL.dust2, 6);
+          }
+        } else if(e.mode === 'stun'){
+          if(e.modeT <= 0){ e.mode = 'chase'; e.modeT = 1.5; }
+        } else { // chase
+          const tgt = P.x + P.w/2 - e.w/2;
+          e.dir = tgt > e.x+2 ? 1 : (tgt < e.x-2 ? -1 : e.dir);
+          e.x += e.dir*e.spd*dt;
+          e.x = Math.max(blo, Math.min(bhi, e.x));
+          if(e.hp < e.hpMax && e.modeT <= 0){ e.mode = 'tele'; e.modeT = e.hp <= 1 ? 0.4 : 0.7; }
+        }
+      }
+    } else if(e.type === 'spora'){
+      // SPORA, die Pilz-Schamanin. Ihr Hut federt Stomps ab wie ein Pilz.
+      // Zyklus: wippen -> Sporen spucken (3/4/5 je Phase) -> ERSCHOEPFT
+      // hecheln - nur dann sitzt der Stomp. Geschosse blockt der Panzer.
       e.flashT = Math.max(0, e.flashT-dt);
       if(e.stunT > 0){ e.stunT -= dt; }
       else {
-        // verfolgt Shelly innerhalb der Arena
-        const tgt = P.x + P.w/2 - e.w/2;
-        e.dir = tgt > e.x+2 ? 1 : (tgt < e.x-2 ? -1 : e.dir);
-        e.x += e.dir*e.spd*dt;
-        e.x = Math.max(e.x0-90, Math.min(e.doorX - e.w - 4, e.x));
+        e.modeT -= dt;
+        e.dir = P.x > e.x ? 1 : -1;
+        const near = Math.abs(P.x + P.w/2 - (e.x + e.w/2)) < 240;
+        if(e.mode === 'idle'){
+          if(e.modeT <= 0 && near){ e.mode = 'spit'; e.shotN = e.hp <= 1 ? 5 : (e.hp <= 2 ? 4 : 3); e.modeT = 0.15; }
+        } else if(e.mode === 'spit'){
+          if(e.modeT <= 0 && e.shotN > 0){
+            e.shotN--; e.modeT = 0.42;
+            const dx = Math.max(-140, Math.min(140, (P.x - e.x)*0.9));
+            spawnShot({kind:'spore', x:e.x+e.w/2-3, y:e.y+2,
+                       vx: dx + (Math.random()-0.5)*50, vy:-170 - Math.random()*40,
+                       grav:420, col:PAL.shroomCap});
+            AU.spit();
+          }
+          if(e.shotN <= 0 && e.modeT <= 0){ e.mode = 'tired'; e.modeT = e.hp <= 1 ? 1.2 : 1.7; }
+        } else { // tired - verschnauft, JETZT verwundbar
+          if(e.modeT <= 0){ e.mode = 'idle'; e.modeT = 1.0; }
+        }
+      }
+    } else if(e.type === 'frost'){
+      // FROSTFEDER. Gleitet mit Eisstacheln auf dem Ruecken (Stomp im Flug
+      // = autsch), beschwoert fallende Eiszapfen und muss danach am Boden
+      // verschnaufen - das einzige verwundbare Fenster.
+      e.flashT = Math.max(0, e.flashT-dt);
+      if(e.stunT > 0){ e.stunT -= dt; }
+      else {
+        e.modeT -= dt;
+        const near = Math.abs(P.x + P.w/2 - (e.x + e.w/2)) < 240;
+        if(e.mode === 'glide'){
+          e.x += e.dir*46*dt;
+          if(e.x > e.x0+56) e.dir = -1;
+          if(e.x < e.x0-56) e.dir = 1;
+          e.y = e.y0 - 26 + Math.sin(e.t*3)*6;
+          if(e.modeT <= 0 && near){
+            e.mode = 'summon'; e.modeT = 0.9;
+            const n = e.hp <= 1 ? 4 : 3;
+            for(let k=0; k<n; k++){
+              const tx = P.x + P.w/2 + (k-(n-1)/2)*26 + (Math.random()-0.5)*10;
+              spawnShot({kind:'icicle', x:tx-3, y:e.y0-110, vy:30, grav:500, h:9, col:PAL.ice, life:3});
+              puff(tx, e.y0-106, PAL.iceHi, 2);           // Ansage-Glitzern
+            }
+            AU.swoop();
+          }
+        } else if(e.mode === 'summon'){
+          e.y = e.y0 - 34;
+          if(e.modeT <= 0){ e.mode = 'rest'; e.modeT = e.hp <= 1 ? 1.3 : 1.8; }
+        } else { // rest - landet und verschnauft, JETZT verwundbar
+          e.y = Math.min(e.y0, e.y + 240*dt);
+          if(e.modeT <= 0){ e.mode = 'glide'; e.modeT = e.hp <= 1 ? 1.6 : 2.2; }
+        }
       }
     } else if(e.type === 'corvo'){
-      // DER RABENKOENIG: jagt Shelly und setzt zu Sprung-Attacken an
+      // DER RABENKOENIG. Phase 1: Sprungjagd. Phase 2 (ab 3 HP verloren...
+      // ab hp<=3): steigt nach 2 Attacken auf und wirft einen Federfaecher.
+      // Phase 3 (1 HP): Raserei - alles schneller, 5 Federn.
       e.flashT = Math.max(0, e.flashT-dt);
+      const clo = e.x0-110, chi = e.doorX - e.w - 4;
       if(e.stunT > 0){ e.stunT -= dt; }
-      else {
+      else if(e.mode === 'fly'){
+        const cx2 = (clo + chi)/2;
+        e.x += (cx2 - e.x)*Math.min(1, 3*dt);
+        e.y += ((e.y0-62) - e.y)*Math.min(1, 3*dt);
+        e.modeT -= dt;
+        if(e.modeT <= 0){
+          const n = e.hp <= 1 ? 5 : 3;
+          for(let k=0; k<n; k++){
+            const a = Math.atan2((P.y+9)-(e.y+11), (P.x+6)-(e.x+11)) + (k-(n-1)/2)*0.3;
+            spawnShot({kind:'feather', x:e.x+e.w/2-3, y:e.y+e.h/2-2,
+                       vx:Math.cos(a)*165, vy:Math.sin(a)*165, life:2.2, col:PAL.crowWing});
+          }
+          AU.swoop(); e.mode = 'volley'; e.modeT = 0.55;
+        }
+      } else if(e.mode === 'volley'){
+        e.modeT -= dt;
+        if(e.modeT <= 0){ e.mode = 'chase'; e.vy = 40; }
+      } else { // chase mit Sprung-Attacken
         const tgt = P.x + P.w/2 - e.w/2;
         e.dir = tgt > e.x+2 ? 1 : (tgt < e.x-2 ? -1 : e.dir);
         const air = e.y < e.y0 - 1;
-        e.x += e.dir*e.spd*(air ? 1.5 : 1)*dt;      // im Flug schneller
-        e.x = Math.max(e.x0-110, Math.min(e.doorX - e.w - 4, e.x));
-        e.jumpT -= dt;
-        if(!air && e.jumpT <= 0){ e.vy = -300; e.jumpT = 1.5 + Math.random()*0.9; AU.swoop(); }
+        e.x += e.dir*e.spd*(air ? 1.5 : 1)*dt;
+        e.x = Math.max(clo, Math.min(chi, e.x));
+        if(e.hp <= 3 && e.actN >= 2 && !air && e.vy === 0){
+          e.actN = 0; e.mode = 'fly'; e.modeT = 0.9; e.vy = 0;
+        } else {
+          e.jumpT -= dt;
+          if(!air && e.jumpT <= 0){
+            e.vy = -300; e.jumpT = (e.hp <= 1 ? 0.9 : 1.5) + Math.random()*0.7;
+            e.actN++; AU.swoop();
+          }
+        }
       }
-      e.vy += 780*dt; e.y += e.vy*dt;
-      if(e.y >= e.y0){ e.y = e.y0; e.vy = 0; }
+      if(e.mode !== 'fly' && e.mode !== 'volley'){
+        e.vy += 780*dt; e.y += e.vy*dt;
+        if(e.y >= e.y0){ e.y = e.y0; e.vy = 0; }
+      }
     }
 
     if(!overlap(P, e)) continue;
@@ -1866,21 +2006,45 @@ function updateEnemies(dt){
       killEnemy(e); AU.stomp(); hitStop(0.05); continue;
     }
 
+    // Sturmangriff der Wache: waehrend des Dashs schmerzt JEDER Kontakt
+    if(e.type === 'boss' && e.mode === 'dash' && !P.rolling){ hurt(true); continue; }
+
+    const isBoss = BOSS_TYPES.includes(e.type);
     const stomp = P.vy > 40 && (P.y + P.h) < e.y + e.h*0.65;
     if(stomp && !P.rolling){
+      // Bossspezifische Stomp-Regeln - muss man erst herausfinden!
+      if(e.type === 'spora' && e.mode !== 'tired' && e.stunT <= 0){
+        // Pilzhut federt: kein Schaden, Shelly wird abgeworfen
+        P.vy = -300; jumpBufT = -9;
+        AU.spring(); vib(10);
+        puff(e.x+e.w/2, e.y, '#fff', 3);
+        continue;
+      }
+      if(e.type === 'frost' && e.mode !== 'rest' && e.stunT <= 0){
+        // Eisstacheln auf dem Ruecken: Stomp im Flug bestraft
+        hurt(true); continue;
+      }
       const high = (gt - lastTapT) < 0.16; // Shell-Bounce: Tipp beim Aufprall
-      if(e.type === 'boss' || e.type === 'corvo'){
-        e.hp--; e.flashT = 0.25; e.stunT = e.type === 'corvo' ? 0.45 : 0.6;
+      if(isBoss){
+        e.hp--; e.flashT = 0.25;
+        e.stunT = e.type === 'corvo' ? 0.45 : 0.6;
+        // nach dem Treffer den Zyklus neu starten (kein Dauer-Stomplock)
+        if(e.type === 'boss'){ e.mode = 'chase'; e.modeT = 1.2; }
+        else if(e.type === 'spora'){ e.mode = 'idle'; e.modeT = 1.2; }
+        else if(e.type === 'frost'){ e.mode = 'glide'; e.modeT = e.hp <= 1 ? 1.6 : 2.2; }
         vib(15); AU.bossHit(); hitStop(0.09);
         cam.shake = Math.max(cam.shake, 3);
         puff(e.x+e.w/2, e.y, '#fff', 4);
-        if(e.hp <= 0){ killEnemy(e); bossDead = true; openDoor(); AU.door(); hitStop(0.16); }
+        if(e.hp <= 0){
+          killEnemy(e); bossDead = true; hitStop(0.16);
+          if(e.doorX !== undefined){ openDoor(); AU.door(); }
+        }
       } else { killEnemy(e); AU.stomp(); hitStop(0.05); }
       P.vy = high ? -338 : -200;
       if(high){ sparkle(P.x+6, P.y+P.h, PAL.shard); AU.bounce(); }
       jumpBufT = -9;
-    } else if((e.type === 'boss' || e.type === 'corvo') && P.rolling){
-      P.vx = -40; P.vy = -140; // Boss blockt den Roll, prallt ab
+    } else if(isBoss && P.rolling){
+      P.vx = -40; P.vy = -140; // Bosse blocken den Roll, Shelly prallt ab
     } else {
       hurt(true);
     }
@@ -1912,6 +2076,57 @@ function updateParticles(dt){
   particles = particles.filter(p => p.life > 0);
 }
 
+// ---- Boss-Geschosse ----
+// Die grosse Entdeckung: EINGEROLLT prallt alles am Panzer ab!
+function spawnShot(o){
+  shots.push(Object.assign({life:4, grav:0, w:6, h:6, vx:0, vy:0, dead:false}, o));
+}
+function updateShots(dt){
+  for(const s of shots){
+    s.life -= dt;
+    s.vy += s.grav*dt;
+    s.x += s.vx*dt; s.y += s.vy*dt;
+    // an soliden Tiles zerplatzen
+    const tc = Math.floor((s.x+s.w/2)/TILE), tr2 = Math.floor((s.y+s.h/2)/TILE);
+    if(s.life <= 0 || isSolid(tileAt(tc, tr2))){
+      puff(s.x+s.w/2, s.y+s.h/2, s.col, 3);
+      s.dead = true; continue;
+    }
+    if(overlap(P, s)){
+      if(P.rolling){                       // Panzer blockt!
+        s.dead = true;
+        AU.shieldHit(); vib(8);
+        puff(s.x+s.w/2, s.y+s.h/2, '#ffffff', 4);
+      } else if(P.invulnT <= 0){
+        s.dead = true;
+        hurt(true);
+      }
+    }
+  }
+  shots = shots.filter(s => !s.dead && s.life > 0);
+}
+function drawShots(){
+  for(const s of shots){
+    const x = Math.round(s.x - cam.x), y = Math.round(s.y - cam.y);
+    if(x < -12 || x > VW+12) continue;
+    if(s.kind === 'spore'){
+      px(x, y+1, 6, 4, PAL.shroomCap);
+      px(x+1, y, 4, 6, PAL.shroomCap);
+      px(x+1, y+1, 2, 2, PAL.shroomCapHi);
+      px(x+3, y+3, 2, 2, '#fff');
+    } else if(s.kind === 'icicle'){
+      px(x+1, y, 4, 5, PAL.ice);
+      px(x+1, y, 1, 5, PAL.iceHi);
+      px(x+2, y+5, 2, 3, PAL.iceDk);
+      px(x+2, y+8, 1, 1, PAL.iceDeep);
+    } else {                               // Feder
+      px(x, y+2, 6, 2, PAL.crowWing);
+      px(x+1, y+1, 4, 1, PAL.crow);
+      px(x+4, y+3, 2, 2, PAL.crowDark);
+    }
+  }
+}
+
 function update(dt){
   // Hit-Stop: bei harten Treffern friert die Welt einen Wimpernschlag ein
   if(hitStopT > 0){ hitStopT -= dt; return; }
@@ -1924,9 +2139,11 @@ function update(dt){
 
   if(state === 'play'){
     playT += dt;
+    cageDeniedT = Math.max(0, cageDeniedT - dt);
     updatePlayer(dt);
     if(state !== 'play') { updateParticles(dt); return; } // Tod diese Frame
     updateEnemies(dt);
+    updateShots(dt);
     updateParticles(dt);
     if(checkpoint && checkpoint.active && checkpoint.animT < 2) checkpoint.animT += dt;
     // Broeckel-Platten: zerfallen kurz nach dem Betreten
@@ -2216,9 +2433,17 @@ function drawCollectibles(){
   }
 }
 
+function drawBossHP(e, x, y){
+  const hpm = e.hpMax || 3, hx0 = x + e.w/2 - (hpm*7-2)/2;
+  for(let i=0;i<hpm;i++) px(hx0+i*7, y-10, 5, 4, i < e.hp ? PAL.heart : '#00000044');
+}
+
 function drawCrow(e){
-  const x = Math.round(e.x - cam.x), y = Math.round(e.y - cam.y);
+  let x = Math.round(e.x - cam.x);
+  const y = Math.round(e.y - cam.y);
   if(x < -30 || x > VW+30) return;
+  // Sturmangriff-Ansage: die Wache zittert vor Wut
+  if(e.type === 'boss' && e.mode === 'tele') x += (Math.floor(gt*30)%2) ? 1 : -1;
   const flap = Math.sin(e.t*10) > 0 ? 1 : 0;
   const dir = e.dir || 1;
   if(e.type === 'boss' || e.type === 'corvo'){
@@ -2264,9 +2489,57 @@ function drawCrow(e){
       px(x+hx+3, y-3, 2, 1, PAL.rockHi);
     }
     px(x+4, y+20, 3, 3, PAL.beak); px(x+14, y+20, 3, 3, PAL.beak);
-    // HP-Anzeige (zentriert, Laenge nach hpMax)
-    const hpm = e.hpMax || 3, hx0 = x + e.w/2 - (hpm*7-2)/2;
-    for(let i=0;i<hpm;i++) px(hx0+i*7, y-10, 5, 4, i < e.hp ? PAL.heart : '#00000044');
+    // Benommen nach dem Wand-Crash: kreisende Sternchen = verwundbar!
+    if(e.type === 'boss' && e.mode === 'stun'){
+      for(let k=0;k<3;k++){
+        const a = gt*5 + k*2.1;
+        px(x+e.w/2 + Math.cos(a)*9 - 1, y-5 + Math.sin(a)*2, 2, 2, PAL.goldHi);
+      }
+    }
+    drawBossHP(e, x, y);
+  } else if(e.type === 'spora'){
+    // SPORA: Kraehen-Schamanin mit federndem Pilzhut
+    const fl = e.flashT > 0 && Math.floor(gt*20)%2 === 0;
+    const B = fl ? '#fff' : PAL.crow, W = fl ? '#fff' : PAL.crowWing;
+    const tired = e.mode === 'tired' || e.stunT > 0;
+    const bb = tired ? 2 : Math.abs(Math.round(Math.sin(e.t*6)));
+    px(x+2, y+5+bb, 14, 12-bb, B);                     // Koerper
+    px(x+3, y+9+bb, 12, 3, W);
+    px(x+4, y+13, 3, 1, fl?'#fff':PAL.crowDark);
+    px(x+10, y+13, 3, 1, fl?'#fff':PAL.crowDark);
+    px(x+(dir>0?13:2), y+8+bb, 3, 2, PAL.beak);        // Schnabel
+    px(x+(dir>0?10:6), y+6+bb, 2, 2, tired ? '#999999' : '#ff4444');
+    if(tired) px(x+(dir>0?13:3), y+11+bb, 2, 3, PAL.heart);   // hechelnde Zunge
+    px(x, y+2+bb, 18, 4, PAL.shroomCap);               // Pilzhut (federt!)
+    px(x+2, y+bb, 14, 2, PAL.shroomCap);
+    px(x, y+5+bb, 18, 1, PAL.shroomCapDk);
+    px(x+2, y+bb, 5, 1, PAL.shroomCapHi);
+    px(x+4, y+1+bb, 2, 2, '#fff'); px(x+12, y+2+bb, 3, 2, '#fff');
+    px(x+4, y+17, 3, 3, PAL.beak); px(x+11, y+17, 3, 3, PAL.beak);
+    drawBossHP(e, x, y);
+  } else if(e.type === 'frost'){
+    // FROSTFEDER: bleiche Kraehe, im Flug mit Eisstacheln auf dem Ruecken
+    const fl = e.flashT > 0 && Math.floor(gt*20)%2 === 0;
+    const B = fl ? '#fff' : '#dfeef6', W = fl ? '#fff' : '#b0cfe0', D = fl ? '#fff' : '#8fc4dd';
+    const rest = e.mode === 'rest' || e.stunT > 0;
+    const flap2 = Math.sin(e.t*(rest?4:14)) > 0 ? 1 : 0;
+    px(x+(dir>0?-3:15), y+6, 5, 2, D);                 // Schwanz
+    px(x+1, y+3, 15, 10, B);                           // Koerper
+    px(x+2, y+11, 4, 1, D); px(x+9, y+11, 4, 1, D);
+    if(rest){
+      px(x+2, y+6, 13, 4, W);                          // Schwingen angelegt
+    } else {
+      px(x, y+2-flap2*3, 8, 4, W); px(x+10, y+2-flap2*3, 8, 4, W);
+      px(x+4, y-1, 2, 3, PAL.iceHi);                   // Eisstacheln: Stomp = autsch
+      px(x+8, y-2, 2, 4, PAL.iceHi);
+      px(x+12, y-1, 2, 3, PAL.iceHi);
+    }
+    px(x+(dir>0?9:2), y-2, 7, 7, B);                   // Kopf
+    px(x+(dir>0?15:-1), y, 4, 2, PAL.beak);
+    px(x+(dir>0?12:4), y-1, 2, 2, rest ? '#8888aa' : '#4aa8ff');
+    if(rest && Math.floor(gt*2)%2===0) px(x+(dir>0?17:-2), y+2, 2, 1, '#fff');   // Verschnauf-Woelkchen
+    px(x+4, y+13, 3, 3, PAL.beak); px(x+11, y+13, 3, 3, PAL.beak);
+    drawBossHP(e, x, y+2);
   } else if(e.type === 'flyer'){
     // Sturmkraehe: fliegt mit grossen Schwingen, Krallen angezogen
     const wy = Math.sin(e.t*9) > 0 ? -2 : 1;
@@ -2344,6 +2617,7 @@ function drawCage(){
     }
   }
   txt(WORLDS[curWorld].buddy, x+cage.w/2, y-16, '#fff', 7, 'center');
+  if(cageDeniedT > 0) txt('DER WÄCHTER LEBT!', x+cage.w/2, y-28, PAL.heart, 8, 'center');
 }
 // Gerettetes Tier: Zip (Gecko), Nio (Eichhoernchen) oder Poppy (Haesin)
 function drawBuddy(x, y, hop){
@@ -2594,7 +2868,7 @@ function drawTitle(){
   px(ox, oy-4, 2, 2, PAL.bowDark);
   px(ox-4, oy+18, 5, 5, PAL.bodyDark); px(ox+6, oy+18, 5, 5, PAL.bodyDark);
   if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder LEERTASTE', VW/2, 156, '#fff', 9, 'center');
-  txt('PROTOTYP v0.7 - 16 LEVEL IN 4 WELTEN', VW/2, 169, '#ffffffaa', 6, 'center');
+  txt('PROTOTYP v0.8 - 4 BOSSE MIT EIGENEN PHASEN', VW/2, 169, '#ffffffaa', 6, 'center');
   drawMuteIcon();
 }
 
@@ -2884,6 +3158,7 @@ function render(){
   drawCage();
   drawCollectibles();
   for(const e of enemies) if(e.alive) drawCrow(e);
+  drawShots();
   if(state === 'rescue' && zip) drawBuddy(zip.x - cam.x, zip.y - cam.y, zip.hop);
   drawShelly();
   drawParticles();
@@ -2945,6 +3220,7 @@ requestAnimationFrame(loop);
 window.G = { P, get state(){return state;}, set state(s){state=s;}, get grid(){return grid;},
   get enemies(){return enemies;}, get hearts(){return hearts;}, cam, startRun, startLevel,
   get collectibles(){return collectibles;}, get cage(){return cage;}, get goal(){return goal;},
+  get shots(){return shots;}, get bossDead(){return bossDead;},
   get checkpoint(){return checkpoint;}, get curWorld(){return curWorld;}, get curLvl(){return curLvl;},
   get MAPH(){return MAPH;}, get MAPW(){return MAPW;}, applyTheme, WORLDS, prog,
   get saladBank(){return saladBank;}, set saladBank(v){saladBank=v;},
