@@ -314,8 +314,180 @@ const SEGS_W33 = [
   }, 18)
 ];
 
+// WELT 1-3 "HUEGELRENNEN" (h=12, Huegel-Speedrun + Dornen-Intro)
+const SEGS_W13 = [
+  seg('hr1', 28, {
+    6:  d(7)+'sss'+d(8)+'*',
+    8:  d(15)+'/'+G(2)+'\\',
+    9:  d(5)+'/'+G(3)+'\\'+d(4)+'/'+G(4)+'\\'+d(2)+'^^',
+    10: G(28), 11: G(28)
+  }),
+  seg('hr2', 26, {
+    7:  d(4)+'sss'+d(6)+'*',
+    8:  d(12)+'==='+d(3)+'sss',
+    9:  d(4)+'^^'+d(12)+'c',
+    10: G(26), 11: G(26)
+  }),
+  seg('hr3', 30, {
+    5:  d(13)+'*',
+    6:  d(6)+'sss'+d(12)+'sss',
+    7:  d(12)+G(4),
+    9:  d(5)+'R'+d(11)+'^^'+d(6)+'z',
+    10: G(10)+d(4)+G(16), 11: G(10)+d(4)+G(16)
+  })
+];
+
+// WELT 2-3 "DORNENHAIN" (h=12, Pilzfedern ueber Dornenfelder + erste Broeckel-Platten)
+const SEGS_W2D = [
+  seg('dh1', 26, {
+    5:  d(11)+'sss',
+    7:  d(17)+'*',
+    9:  d(4)+'sss'+d(5)+'M'+d(2)+'^^^^'+d(2)+'v',
+    10: G(26), 11: G(26)
+  }),
+  seg('dh2', 30, {
+    3:  d(20)+'*',
+    5:  d(8)+'sss'+d(8)+G(4),
+    6:  d(26)+'sss',
+    9:  d(5)+'M'+d(6)+'^^'+d(4)+'M'+d(4)+'c',
+    10: G(30), 11: G(30)
+  }),
+  seg('dh3', 28, {
+    6:  d(9)+'sss'+d(6)+'v',
+    8:  d(20)+'sss',
+    9:  d(4)+'c'+d(15)+'^^'+d(2)+'*',
+    10: G(8)+'XXXX'+G(16), 11: G(8)+d(4)+G(16)
+  })
+];
+
+// WELT 3-3 "BRUECHIGES EIS" (h=12, Broeckel-Platten auf Glatteis)
+const SEGS_W3B = [
+  seg('be1', 14, { 9: d(2)+'P'+d(4)+'sss', 10: 'I'.repeat(14), 11: G(14) }),
+  seg('be2', 30, {
+    6:  d(10)+'sss'+d(5)+'*',
+    9:  d(22)+'v',
+    10: 'I'.repeat(8)+'XXX'+d(3)+'XXX'+'I'.repeat(13),
+    11: G(8)+d(9)+G(13)
+  }),
+  seg('be3', 30, {
+    5:  d(12)+'*',
+    7:  d(4)+'sss'+d(12)+'sss',
+    9:  d(10)+'c'+d(9)+'^^',
+    10: 'I'.repeat(30), 11: G(30)
+  }),
+  seg('be4', 26, {
+    6:  d(6)+'sss'+d(9)+'*',
+    9:  d(18)+'z',
+    10: 'I'.repeat(6)+'XXXX'+d(4)+'XXXX'+'I'.repeat(8),
+    11: G(6)+d(12)+G(8)
+  }),
+  seg('be5', 16, { 9: d(4)+'sss'+d(3)+'F', 10: 'I'.repeat(16), 11: G(16) })
+];
+
 // ------------------------------------------------------------
-// WELT-/LEVELSTRUKTUR: 3 Welten x 3 Level
+// WELT 4: CORVOS FESTUNG – Endspurt mit allem, was weh tut.
+// ------------------------------------------------------------
+// 4-1 "FESTUNGSTOR" (h=12, Wachen + Dornen + Broeckel-Platte)
+const SEGS_W41 = [
+  seg('ft1', 26, {
+    6:  d(8)+'sss'+d(7)+'*',
+    9:  d(4)+'sss'+d(8)+'c'+d(5)+'^^',
+    10: G(26), 11: G(26)
+  }),
+  seg('ft2', 28, {
+    5:  d(16)+'*',
+    6:  d(6)+'sss'+d(12)+'sss',
+    9:  d(12)+'^^'+d(6)+'c',
+    10: G(6)+'XXX'+G(19), 11: G(6)+d(3)+G(19)
+  }),
+  seg('ft3', 30, {
+    4:  d(20)+'*',
+    5:  d(19)+G(4),
+    7:  d(5)+'sss'+d(14)+'sss',
+    9:  d(4)+'z'+d(6)+'z'+d(10)+'^^^',
+    10: G(12)+d(4)+G(14), 11: G(12)+d(4)+G(14)
+  })
+];
+
+// 4-2 "RABENTURM" (h=22, Kickturn-Turm im Pendel: E1 rechts -> E2 links -> E3 rechts)
+// Waende: links cols 6-7 (rows 0-13), rechts cols 62-63 (rows 6-21).
+const SEGS_W42 = [
+  seg('rt', 64, {
+    0:  d(6)+G(2),
+    1:  d(6)+G(2),
+    2:  d(6)+G(2),
+    3:  d(6)+G(2),
+    4:  d(6)+G(2)+d(10)+'sss'+d(9)+'*'+d(6)+'v',
+    5:  d(6)+G(2),
+    6:  d(6)+G(2)+d(42)+'*'+d(11)+G(2),
+    7:  d(6)+G(2)+d(30)+'sss'+d(17)+'F'+d(3)+G(2),
+    8:  d(6)+G(2)+d(4)+G(50)+G(2),                             // E3-Band, Durchstieg links 8-11
+    9:  d(6)+G(2)+d(54)+G(2),
+    10: d(6)+G(2)+d(54)+G(2),
+    11: d(6)+G(2)+d(20)+'sss'+d(31)+G(2),
+    12: d(6)+G(2)+'M'+d(20)+'======'+d(27)+G(2),               // Wand-Pilz links + Roll-Tunnel
+    13: d(6)+G(2)+'M'+d(4)+'sss'+d(8)+'^^'+d(6)+'z'+d(8)+'sss'+d(6)+'*'+d(11)+G(2),
+    14: d(8)+G(50)+d(4)+G(2),                                  // E2-Band, Durchstieg rechts 58-61
+    15: d(62)+G(2),
+    16: d(62)+G(2),
+    17: d(30)+'sss'+d(29)+G(2),
+    18: d(38)+'======'+d(16)+'M'+d(1)+G(2),                    // Roll-Tunnel + Turm-Pilz rechts
+    19: d(2)+'P'+d(5)+'sss'+d(6)+'^^'+d(6)+'sss'+d(8)+'z'+d(8)+'c'+d(8)+'sss'+d(2)+'M'+d(1)+G(2),
+    20: G(28)+d(3)+G(33),                                      // E1-Boden mit Todes-Luecke 28-30
+    21: G(28)+d(3)+G(33)
+  }, 22)
+];
+
+// 4-3 "DORNENKERKER" (h=12, das harte Stueck: Dornen-Gassen + Broeckel-Bruecken)
+const SEGS_W43 = [
+  seg('dk1', 14, { 9: d(2)+'P'+d(4)+'sss', 10: G(14), 11: G(14) }),
+  seg('dk2', 30, {
+    6:  d(8)+'sss'+d(10)+'*',
+    7:  d(18)+G(3),
+    9:  d(6)+'^^^'+d(5)+'c'+d(7)+'^^^',
+    10: G(30), 11: G(30)
+  }),
+  seg('dk3', 32, {
+    5:  d(20)+'*',
+    6:  d(5)+'sss'+d(16)+'sss',
+    9:  d(12)+'z'+d(6)+'v',
+    10: G(6)+'XXX'+d(3)+G(9)+'XXX'+d(2)+G(6),
+    11: G(6)+d(6)+G(9)+d(5)+G(6)
+  }),
+  seg('dk4', 28, {
+    4:  d(14)+'*',
+    6:  d(4)+'sss'+d(13)+'sss',
+    7:  d(12)+G(4),
+    9:  d(6)+'c'+d(11)+'c'+d(4)+'^^',
+    10: G(28), 11: G(28)
+  })
+];
+
+// 4-4 "CORVOS THRON" (h=12, Anmarsch + Arena mit Corvo selbst + Kaefig)
+const SEGS_W44 = [
+  seg('ct1', 12, { 9: d(2)+'P'+d(4)+'sss', 10: G(12), 11: G(12) }),
+  seg('ct2', 24, {
+    6:  d(6)+'sss'+d(8)+'sss',
+    9:  d(4)+'^^'+d(6)+'c'+d(5)+'^^',
+    10: G(24), 11: G(24)
+  }),
+  seg('throne', 34, {
+    3:  d(9)+'*'+d(10)+'*'+d(9)+'D',
+    4:  d(30)+'D', 5: d(30)+'D', 6: d(30)+'D', 7: d(30)+'D', 8: d(30)+'D',
+    9:  d(15)+'K'+d(14)+'D',
+    10: G(34), 11: G(34)
+  }),
+  seg('tfin', 24, {
+    0: d(22)+'##', 1: d(22)+'##', 2: d(22)+'##', 3: d(22)+'##',
+    4: d(22)+'##', 5: d(22)+'##', 6: d(7)+'*'+d(14)+'##', 7: d(22)+'##',
+    8: d(22)+'##',
+    9: d(4)+'ssssss'+d(4)+'Z'+d(7)+'##',
+    10: G(24), 11: G(24)
+  })
+];
+
+// ------------------------------------------------------------
+// WELT-/LEVELSTRUKTUR: 4 Welten x 4 Level
 // ------------------------------------------------------------
 const WORLDS = [
   {
@@ -344,6 +516,10 @@ const WORLDS = [
         checkpoint:{seg:'sleep', col:2, gy:10*TILE},
         hints:[['sleep',6,66,'PSST! LEISE VORBEIROLLEN'],
                ['guard2',6,60,'TIPP BEIM AUFPRALL = HOHER BOUNCE']] },
+      { name:'HÜGELRENNEN', maph:12, segs:[SEG_START2, ...SEGS_W13, SEG_END1],
+        checkpoint:{seg:'hr2', col:1, gy:10*TILE},
+        hints:[['hr1',20,120,'DORNEN = NIE BERÜHREN!'],
+               ['hr3',4,90,'SPRING AUF DIE STUFE']] },
       { name:'CORVOS WACHE', maph:12, segs:[SEG_START3, S1.arena, S1.finale],
         checkpoint:null,
         hints:[['arena',4,60,'DIE WACHE! 3x DRAUFSPRINGEN'],
@@ -386,6 +562,10 @@ const WORLDS = [
       { name:'HOCH HINAUS', maph:18, segs:[SEG_START_HH, ...SEGS_W22],
         checkpoint:null,
         hints:[['hh',38,210,'SPRING AN DIE WAND!'], ['hh',30,130,'LÖCHER = NUR UMWEG']] },
+      { name:'DORNENHAIN', maph:12, segs:[SEG_START2, ...SEGS_W2D, SEG_END1],
+        checkpoint:{seg:'dh2', col:1, gy:10*TILE},
+        hints:[['dh1',8,116,'BOING ÜBER DIE DORNEN!'],
+               ['dh3',4,120,'PLATTEN BRÖCKELN - ZÜGIG!']] },
       { name:'NIOS KÄFIG', maph:22, segs:SEGS2,
         checkpoint:{seg:'w2', col:20, gy:14*TILE},
         hints:[['w2',4,272,'STEINE = KICKTURN!'], ['w2',34,250,'LOCH = ABGRUND!'],
@@ -430,10 +610,64 @@ const WORLDS = [
       { name:'KLIPPENRUTSCHE', maph:12, segs:SEGS_W32,
         checkpoint:{seg:'s32c', col:1, gy:10*TILE},
         hints:[['s32b',6,100,'ROLLE BERGAB + EIS = TURBO'], ['s32c',18,100,'SPRING AM EISRAND AB!']] },
+      { name:'BRÜCHIGES EIS', maph:12, segs:SEGS_W3B,
+        checkpoint:{seg:'be3', col:2, gy:10*TILE},
+        hints:[['be2',4,116,'BRÜCHIG! NICHT STEHENBLEIBEN'],
+               ['be4',10,110,'PSST - UND NICHT RUTSCHEN!']] },
       { name:'FROSTGIPFEL', maph:18, segs:SEGS_W33,
         checkpoint:{seg:'fg', col:46, gy:10*TILE},
         hints:[['fg',40,200,'SPRING AN DIE WAND!'], ['fg',36,120,'ROLLE LEISE ÜBERS EIS'],
                ['fg',10,120,'POPPY WARTET LINKS!']] }
+    ]
+  },
+  {
+    sub:'WELT 4', name:'CORVOS FESTUNG',
+    theme:{
+      sky1:'#2e2246', sky2:'#4a3868', sky3:'#3a2c56',
+      sun:'#e8e4f0', sunHi:'#ffffff', sunRay:'rgba(232,228,240,0.3)',   // Mond statt Sonne
+      hillFar:'#4a3a68', hillFarHi:'#5c4a7c',
+      hillNear:'#382a52', hillNearHi:'#463562',
+      treeFar:'#54427a', treeFarDk:'#443465',
+      grass:'#8a8298', grassLip:'#b0aabf', grassDk:'#6c6480',
+      dirt:'#55506b', dirtMid:'#464158', dirtDeep:'#373347', dirtDeep2:'#2a2738',
+      pebble:'#7a7490', pebbleHi:'#9b95ae',
+      bush:'#4a3a68', bushHi:'#5f4c82', bushDk:'#382a52',
+      flower:'#c9a227'
+    },
+    buddy:'GUSTAV', buddyC1:'#4aa877', buddyC2:'#2f7a55', buddyKind:'turtle',
+    intro:{
+      head:'CORVOS FESTUNG',
+      lines:[
+        'Alle Freunde sind frei - doch Corvo',
+        'hat noch ein Pfand: OPA GUSTAV,',
+        'den ältesten Panzer im Tal.',
+        '',
+        'Hinter diesen Mauern wartet',
+        'der Rabenkönig selbst.',
+        'Zeig ihm, was langsam wirklich heißt!'
+      ],
+      tips:['DORNEN = NIE BERÜHREN', 'BRÜCHIGE PLATTEN FALLEN!']
+    },
+    win:['"Enkelin, du fährst ja schneller,', 'als ich denken kann!"'],
+    levels:[
+      { name:'FESTUNGSTOR', maph:12, segs:[SEG_START2, ...SEGS_W41, SEG_END1],
+        checkpoint:{seg:'ft2', col:1, gy:10*TILE},
+        hints:[['ft1',6,120,'WILLKOMMEN IN DER FESTUNG'],
+               ['ft2',2,100,'PLATTE FÄLLT - NICHT TRÖDELN']] },
+      { name:'RABENTURM', maph:22, segs:SEGS_W42,
+        checkpoint:{seg:'rt', col:48, gy:14*TILE},
+        hints:[['rt',8,290,'HOCH GEHTS IM ZICKZACK'],
+               ['rt',26,200,'ROLL LEISE UNTERM BALKEN'],
+               ['rt',20,90,'OBEN WARTET DIE FLAGGE']] },
+      { name:'DORNENKERKER', maph:12, segs:[...SEGS_W43, SEG_END1],
+        checkpoint:{seg:'dk3', col:14, gy:10*TILE},
+        hints:[['dk2',2,120,'DER KERKER VOLLER DORNEN'],
+               ['dk3',4,110,'ROLLEND LANDEN = SICHER']] },
+      { name:'CORVOS THRON', maph:12, segs:SEGS_W44,
+        checkpoint:null,
+        hints:[['ct2',2,110,'GLEICH BIST DU BEI IHM...'],
+               ['throne',4,60,'CORVO! 5X DRAUFSPRINGEN!'],
+               ['throne',13,44,'HOHER BOUNCE HILFT!']] }
     ]
   }
 ];
@@ -466,13 +700,15 @@ function markDone(){
 function shardsTotal(){ return prog.reduce((a,w) => a + w.reduce((b,l) => b + l.best, 0), 0); }
 
 // ---- Weltkarte (Overworld im Super-Mario-Stil) ----
-// Lineare Knotenkette: 3 Level Wiesental, Snack-Stand, 3 Pilzwald, 3 Frostklippen.
-const MAP_W = 620;
+// Lineare Knotenkette: 4 Level Wiesental, Snack-Stand, dann je 4 Level
+// Pilzwald, Frostklippen und Corvos Festung.
+const MAP_W = 952;
 const MNODES = [
-  {x:44,  y:118, w:0, l:0}, {x:100, y:90,  w:0, l:1}, {x:156, y:120, w:0, l:2},
-  {x:206, y:86,  shop:true},
-  {x:258, y:116, w:1, l:0}, {x:314, y:86,  w:1, l:1}, {x:370, y:118, w:1, l:2},
-  {x:452, y:94,  w:2, l:0}, {x:508, y:124, w:2, l:1}, {x:566, y:90,  w:2, l:2}
+  {x:44,  y:118, w:0, l:0}, {x:100, y:88,  w:0, l:1}, {x:156, y:120, w:0, l:2}, {x:212, y:90, w:0, l:3},
+  {x:258, y:120, shop:true},
+  {x:306, y:90,  w:1, l:0}, {x:362, y:120, w:1, l:1}, {x:418, y:88,  w:1, l:2}, {x:474, y:118, w:1, l:3},
+  {x:524, y:92,  w:2, l:0}, {x:580, y:124, w:2, l:1}, {x:636, y:90,  w:2, l:2}, {x:692, y:120, w:2, l:3},
+  {x:742, y:92,  w:3, l:0}, {x:798, y:122, w:3, l:1}, {x:854, y:90,  w:3, l:2}, {x:908, y:118, w:3, l:3}
 ];
 let mapPos = 0, mapTarget = null, mapStep = null;   // mapStep = {from,to,t}
 let mapShellyX = MNODES[0].x, mapShellyY = MNODES[0].y, mapCamX = 0, mapDir = 1;
@@ -524,13 +760,17 @@ function returnToMap(){
 }
 
 // Tile-Codes
-const T_EMPTY=0, T_GROUND=1, T_ROCK=2, T_LOG=3, T_RAMP_UP=4, T_RAMP_DN=5, T_DOOR=6, T_SHROOM=7, T_ICE=8;
-const CHAR2TILE = { '#':T_GROUND, 'R':T_ROCK, '=':T_LOG, '/':T_RAMP_UP, '\\':T_RAMP_DN, 'D':T_DOOR, 'M':T_SHROOM, 'I':T_ICE };
+const T_EMPTY=0, T_GROUND=1, T_ROCK=2, T_LOG=3, T_RAMP_UP=4, T_RAMP_DN=5, T_DOOR=6, T_SHROOM=7, T_ICE=8,
+      T_SPIKE=9, T_CRUMBLE=10;
+const CHAR2TILE = { '#':T_GROUND, 'R':T_ROCK, '=':T_LOG, '/':T_RAMP_UP, '\\':T_RAMP_DN, 'D':T_DOOR,
+                    'M':T_SHROOM, 'I':T_ICE, '^':T_SPIKE, 'X':T_CRUMBLE };
 // Pilz ist seitlich solide (= Kickturn-Wand), Landung federt aber (Y-Resolve)
-const isSolid = t => t===T_GROUND || t===T_ROCK || t===T_LOG || t===T_DOOR || t===T_SHROOM || t===T_ICE;
+// Dornen (T_SPIKE) sind NICHT solide - sie tun nur weh (Check in updatePlayer)
+const isSolid = t => t===T_GROUND || t===T_ROCK || t===T_LOG || t===T_DOOR || t===T_SHROOM || t===T_ICE || t===T_CRUMBLE;
 
 let MAPW = 0, grid = [], vgrid = [], SEGOFF = {};
 let spawns = [];          // Gegner-Spawn-Beschreibungen
+let crumbles = [], crumbleAt = new Map();   // Broeckel-Platten: {c, r, t} (t<0 = intakt)
 let collectibles = [];    // Salat + Splitter (persistieren ueber Respawn)
 let cage = null, goal = null, playerStart = {x:32,y:120};
 let checkpoint = null;    // {x, y, active, animT} – nur im Speicher
@@ -544,6 +784,7 @@ function buildLevel(){
   MAPW = L.segs.reduce((a,s)=>a+s.w, 0);
   grid = []; for(let r=0;r<MAPH;r++) grid.push(new Array(MAPW).fill(0));
   spawns = []; collectibles = []; cage = null; goal = null;
+  crumbles = []; crumbleAt = new Map();
   totalSalad = 0; totalShards = 0;
   let off = 0; SEGOFF = {};
   for(const s of L.segs){
@@ -557,10 +798,15 @@ function buildLevel(){
         else if(ch==='*'){ collectibles.push({kind:'shard', x:x+5, y:r*TILE+3, w:7, h:11, got:false}); totalShards++; }
         else if(ch==='c'){ spawns.push({type:'guard', x:x+1, y:groundY-14}); }
         else if(ch==='z'){ spawns.push({type:'sleeper', x:x+1, y:groundY-13}); }
+        else if(ch==='v'){ spawns.push({type:'flyer', x:x+1, y:r*TILE+2}); }
         else if(ch==='B'){ spawns.push({type:'boss', x:x-4, y:groundY-22, doorX:(off+26)*TILE}); }
+        else if(ch==='K'){ spawns.push({type:'corvo', x:x-4, y:groundY-22, doorX:(off+30)*TILE}); }
         else if(ch==='Z'){ cage = {x:x-3, y:groundY-30, w:22, h:30, open:false}; }
         else if(ch==='F'){ goal = {x:x+2, y:groundY-44, w:12, h:44, reached:false}; }
-        else if(CHAR2TILE[ch] !== undefined) grid[r][c] = CHAR2TILE[ch];
+        else if(CHAR2TILE[ch] !== undefined){
+          grid[r][c] = CHAR2TILE[ch];
+          if(ch==='X'){ const cr = {c, r, t:-1}; crumbles.push(cr); crumbleAt.set(r*MAPW+c, cr); }
+        }
       }
     }
     off += s.w;
@@ -761,10 +1007,42 @@ function paintShroom(g, v){
   else     { fr(g,6,1,2,2,'#fff'); fr(g,3,4,2,2,'#fff'); fr(g,11,3,2,1,'#fff'); }
 }
 
+// Dornen: gezackte Steinspitzen auf der Bodenkante
+function paintSpike(g, v, seed){
+  for(let k=0;k<4;k++){
+    const bx = k*4;
+    const tip = 5 + (hash(seed+k*7)%3);              // Spitzenhoehe variiert
+    fr(g, bx,   12, 4, 4, PAL.rockDark);             // Sockel
+    fr(g, bx+1, 9, 2, 4, PAL.rock);
+    fr(g, bx+1, tip, 2, 12-tip, PAL.rock);
+    fr(g, bx+1, tip, 1, 12-tip, PAL.rockHi);         // Lichtkante
+    fr(g, bx+2, 8, 1, 5, PAL.rockDark);              // Schattenkante
+    fr(g, bx+1, tip, 1, 1, '#ffffff');               // boese Glitzerspitze
+  }
+}
+
+// Broeckel-Platte: rissige Steinplatte mit abgeplatzten Ecken
+function paintCrumble(g, v, seed){
+  fr(g, 0, 0, 16, 16, PAL.rock);
+  fr(g, 0, 0, 16, 2, PAL.rockHi);
+  fr(g, 0, 13, 16, 3, PAL.rockDark);
+  fr(g, 0, 7, 16, 1, PAL.rockDark);                  // Querfuge
+  fr(g, v?4:9, 0, 1, 7, PAL.rockDark);               // Laengsfugen versetzt
+  fr(g, v?11:5, 8, 1, 8, PAL.rockDark);
+  for(let k=0;k<4;k++){                              // Risse
+    const rx = 1+(hash(seed+k*13)%13), ry = 2+(hash(seed*3+k*7)%10);
+    fr(g, rx, ry, 1, 2+(hash(seed+k)%3), PAL.rockDark);
+  }
+  // abgeplatzte Ecken verraten die Bruchstelle
+  g.clearRect(0, 0, 2, 1); g.clearRect(15, 0, 1, 2);
+  g.clearRect(0, 15, 1, 1); g.clearRect(14, 15, 2, 1);
+}
+
 function makeAtlas(){
   // Reset: wird bei Level-Themes (Palette-Wechsel) neu gebaut
   ATLAS.length = 0;
   AT.grass = []; AT.dirt = []; AT.rock = []; AT.logM = []; AT.shroom = []; AT.ice = [];
+  AT.spike = []; AT.crumble = [];
   DIRT_BASE = [PAL.dirt, PAL.dirtMid, PAL.dirtDeep];
   DIRT_DK   = [PAL.dirtMid, PAL.dirtDeep, PAL.dirtDeep2];
   for(let v=0;v<6;v++) AT.grass.push(atile(16, 22, 0, -6, g=>paintGrass(g, v, 101+v*37)));
@@ -780,6 +1058,8 @@ function makeAtlas(){
   AT.doorM = atile(16, 16, 0, 0, g=>paintDoor(g, false));
   for(let v=0;v<2;v++) AT.shroom.push(atile(16, 16, 0, 0, g=>paintShroom(g, v)));
   for(let v=0;v<2;v++) AT.ice.push(atile(16, 16, 0, 0, g=>paintIce(g, v, 601+v*43)));
+  for(let v=0;v<2;v++) AT.spike.push(atile(16, 16, 0, 0, g=>paintSpike(g, v, 701+v*37)));
+  for(let v=0;v<2;v++) AT.crumble.push(atile(16, 16, 0, 0, g=>paintCrumble(g, v, 801+v*53)));
 }
 
 // Variantengitter: pro Zelle EINMAL beim Levelbau die Atlas-Kachel
@@ -811,6 +1091,8 @@ function computeVGrid(){
       else if(t===T_DOOR) row[c] = tileAt(c, r-1)===T_DOOR ? AT.doorM : AT.doorT;
       else if(t===T_SHROOM) row[c] = AT.shroom[hash(c*23+r*7)%2];
       else if(t===T_ICE) row[c] = AT.ice[hash(c*19+r*3)%2];
+      else if(t===T_SPIKE) row[c] = AT.spike[hash(c*31)%2];
+      else if(t===T_CRUMBLE) row[c] = AT.crumble[hash(c*13+r*17)%2];
     }
     vgrid.push(row);
   }
@@ -915,13 +1197,16 @@ let enemies = [], particles = [];
 let cam = {x:0, y:MAPH*TILE - VH, shake:0};
 let zip = null;        // Zip-Animation bei Rettung
 let flashT = 0;        // Screen-Flash beim Splitter
+let hurtFlashT = 0;    // roter Treffer-Flash
+let hitStopT = 0;      // Hit-Stop: kurzes Einfrieren bei harten Treffern (Juice)
+function hitStop(t){ hitStopT = Math.max(hitStopT, t); }
 
 const P = {
   x:0, y:0, w:13, h:19, vx:0, vy:0,
   dir:1,                 // Fahrtrichtung: +1 rechts, -1 links (Panzer-Kickturn an Waenden)
   turnT:0,               // Cooldown nach Kickturn (verhindert Flackern in Nischen)
   grounded:false, lastGroundT:-9, rolling:false, rollA:0,
-  invulnT:0, paddleT:-9, dead:false
+  invulnT:0, paddleT:-9, squashT:0, dead:false
 };
 
 // Physik-Konstanten
@@ -1015,6 +1300,8 @@ const AU = {
   checkpoint(){ [523,784].forEach((f,i)=>this.tone(f, 0, i*0.09, 0.15, 'square', 0.13)); },
   turn(){ this.tone(520, 260, 0, 0.09, 'square', 0.12); },              // Panzer-Kickturn
   spring(){ this.tone(220, 880, 0, 0.22, 'triangle', 0.22); },          // Pilz-Feder "Boing"
+  crumble(){ this.noise(0, 0.12, 0.1); this.tone(150, 70, 0, 0.15, 'triangle', 0.1); }, // Platte broeckelt
+  swoop(){ this.tone(500, 160, 0, 0.25, 'sawtooth', 0.1); },            // Corvos Sturzflug
   buy(){ [660, 880, 990].forEach((f,i)=>this.tone(f, 0, i*0.06, 0.1, 'square', 0.13)); }, // Kassen-Jingle
   shieldHit(){ this.tone(520, 140, 0, 0.16, 'square', 0.2); this.noise(0, 0.08, 0.1); },  // Panzer-Klong
   door(){ this.tone(120, 60, 0, 0.5, 'sawtooth', 0.22); this.noise(0, 0.3, 0.15); },
@@ -1026,15 +1313,21 @@ const AU = {
 
 function resetEnemies(){
   enemies = [];
+  const wspd = curWorld*6;   // spaetere Welten = flottere Gegner
   for(const s of spawns){
-    if(s.type === 'boss' && bossDead) continue;
+    if((s.type === 'boss' || s.type === 'corvo') && bossDead) continue;
     if(s.type === 'guard')
-      enemies.push({type:'guard', x:s.x, y:s.y, w:14, h:14, x0:s.x, dir:1, spd:28, alive:true, t:Math.random()*6});
+      enemies.push({type:'guard', x:s.x, y:s.y, w:14, h:14, x0:s.x, dir:1, spd:28+wspd, alive:true, t:Math.random()*6});
     else if(s.type === 'sleeper')
       enemies.push({type:'sleeper', x:s.x, y:s.y, w:14, h:13, alive:true, awake:false, t:Math.random()*6});
+    else if(s.type === 'flyer')
+      enemies.push({type:'flyer', x:s.x, y:s.y, y0:s.y, w:14, h:12, x0:s.x, dir:-1, spd:32+wspd, alive:true, t:Math.random()*6});
     else if(s.type === 'boss')
       enemies.push({type:'boss', x:s.x, y:s.y, w:22, h:22, x0:s.x, doorX:s.doorX, dir:1, spd:52,
-                    hp:3, alive:true, stunT:0, flashT:0, t:0});
+                    hp:3, hpMax:3, alive:true, stunT:0, flashT:0, t:0});
+    else if(s.type === 'corvo')
+      enemies.push({type:'corvo', x:s.x, y:s.y, y0:s.y, w:22, h:22, x0:s.x, doorX:s.doorX, dir:1, spd:70,
+                    hp:5, hpMax:5, alive:true, stunT:0, flashT:0, vy:0, jumpT:1.4, t:0});
   }
 }
 
@@ -1055,6 +1348,14 @@ function respawnPlayer(){
   P.grounded = false; P.invulnT = 1.2;
   cam.x = Math.max(0, P.x - 100);
   cam.y = Math.max(0, Math.min(P.y - VH*0.55, MAPH*TILE - VH));
+  // Broeckel-Platten wiederherstellen
+  let dirty = false;
+  for(const cr of crumbles){
+    if(cr.t >= 0 || grid[cr.r][cr.c] !== T_CRUMBLE){
+      grid[cr.r][cr.c] = T_CRUMBLE; cr.t = -1; dirty = true;
+    }
+  }
+  if(dirty) computeVGrid();
   resetEnemies();
 }
 
@@ -1182,6 +1483,12 @@ addEventListener('pointerdown', e => {
   // Mute-Button (Ecke unten rechts) faengt den Tap ab
   const cp = canvasPos(e);
   if(cp.x > VW-26 && cp.y > VH-22){ AU.setMute(!AU.muted); AU.click(); return; }
+  // Pause-Knopf (oben rechts, nur im Spiel)
+  if(state === 'play' && cp.x > VW-64 && cp.x < VW-45 && cp.y < 20){
+    state = 'pause'; stateT = 0; AU.click();
+    pointerHeld = false; keyRoll = false; activePointers.clear(); padJumpPending = false;
+    return;
+  }
   activePointers.add(e.pointerId);
   pointerHeld = true;
   if(activePointers.size === 1){ holdT = 0; tap(cp); } // nur der erste Finger zaehlt als Tap/Hold
@@ -1222,6 +1529,7 @@ function hurt(knock){
   }
   hearts--;
   vib(30); AU.hurt();
+  hitStop(0.08); hurtFlashT = 0.22;
   cam.shake = Math.max(cam.shake, 3);
   puff(P.x+7, P.y+8, PAL.heart, 6);
   if(hearts <= 0){ state = 'gameover'; stateT = 0; AU.gameover(); return; }
@@ -1232,6 +1540,7 @@ function hurt(knock){
 function fallDeath(){
   hearts--;
   vib(30); AU.hurt();
+  hurtFlashT = 0.25;
   if(hearts <= 0){ state = 'gameover'; stateT = 0; AU.gameover(); return; }
   respawnPlayer();   // respawnt am Checkpoint, falls aktiviert
 }
@@ -1389,20 +1698,49 @@ function updatePlayer(dt){
   if(P.grounded) P.lastGroundT = gt;
   if(P.rolling) P.rollA += P.vx*dt/6;
   P.invulnT = Math.max(0, P.invulnT - dt);
+  P.squashT = Math.max(0, P.squashT - dt);
 
-  // --- Lande-Staub (Juice, rein kosmetisch) ---
+  // --- Broeckel-Platten scharf machen (Betreten startet den Zerfall) ---
+  if(P.grounded){
+    const fr2 = Math.floor((P.y+P.h+1)/TILE);
+    for(let c = Math.floor((P.x+1)/TILE); c <= Math.floor((P.x+P.w-1)/TILE); c++){
+      if(tileAt(c, fr2) === T_CRUMBLE){
+        const cr = crumbleAt.get(fr2*MAPW+c);
+        if(cr && cr.t < 0){ cr.t = 0; AU.crumble(); vib(10); }
+      }
+    }
+  }
+
+  // --- Dornen: beruehren tut weh (Panzer hin oder her) ---
+  if(P.invulnT <= 0){
+    const sc0 = Math.floor((P.x+2)/TILE), sc1 = Math.floor((P.x+P.w-2)/TILE);
+    const sr0 = Math.max(0, Math.floor(P.y/TILE)), sr1 = Math.floor((P.y+P.h-1)/TILE);
+    outer:
+    for(let r=sr0; r<=sr1; r++)
+      for(let c=sc0; c<=sc1; c++)
+        if(tileAt(c, r) === T_SPIKE && P.y+P.h > r*TILE+6){ hurt(true); break outer; }
+  }
+
+  // --- Roll-Staub bei Tempo (Juice) ---
+  if(P.rolling && P.grounded && P.vx > 120 && Math.random() < dt*16)
+    particles.push({x:P.x + (P.dir>0?0:P.w), y:P.y+P.h-1,
+                    vx:-P.dir*(20+Math.random()*30), vy:-10-Math.random()*25,
+                    life:0.3, col:Math.random()<0.5?PAL.dust1:PAL.dust2, s:2});
+
+  // --- Lande-Staub + Squash (Juice, rein kosmetisch) ---
   if(P.grounded && !wasGrounded && fallV > 170){
     dust(P.x + P.w/2, P.y + P.h);
-    if(fallV > 330) cam.shake = Math.max(cam.shake, 1.5);
+    P.squashT = 0.13;
+    if(fallV > 330){ cam.shake = Math.max(cam.shake, 1.5); vib(8); }
   }
 
   // --- Sturz in Luecke ---
   if(P.y > MAPH*TILE + 30){ fallDeath(); return; }
 
-  // --- Checkpoint beruehren ---
+  // --- Checkpoint beruehren (nur auf Flaggen-Hoehe, nicht von der Etage darunter) ---
   if(checkpoint && !checkpoint.active &&
      P.x + P.w > checkpoint.x && P.x < checkpoint.x + 12 &&
-     P.y + P.h > checkpoint.y - 28){
+     P.y + P.h > checkpoint.y - 28 && P.y + P.h < checkpoint.y + 20){
     checkpoint.active = true; checkpoint.animT = 0;
     checkpoint.dir = P.dir;
     sparkle(checkpoint.x + 6, checkpoint.y - 20, PAL.bow);
@@ -1483,6 +1821,12 @@ function updateEnemies(dt){
       e.x += e.dir*e.spd*dt;
       if(e.x > e.x0+44){ e.x = e.x0+44; e.dir = -1; }
       if(e.x < e.x0-44){ e.x = e.x0-44; e.dir = 1; }
+    } else if(e.type === 'flyer'){
+      // Sturmkraehe: patrouilliert fliegend auf einer Sinuswelle
+      e.x += e.dir*e.spd*dt;
+      if(e.x > e.x0+40){ e.x = e.x0+40; e.dir = -1; }
+      if(e.x < e.x0-40){ e.x = e.x0-40; e.dir = 1; }
+      e.y = e.y0 + Math.sin(e.t*2.4)*9;
     } else if(e.type === 'boss'){
       e.flashT = Math.max(0, e.flashT-dt);
       if(e.stunT > 0){ e.stunT -= dt; }
@@ -1493,6 +1837,21 @@ function updateEnemies(dt){
         e.x += e.dir*e.spd*dt;
         e.x = Math.max(e.x0-90, Math.min(e.doorX - e.w - 4, e.x));
       }
+    } else if(e.type === 'corvo'){
+      // DER RABENKOENIG: jagt Shelly und setzt zu Sprung-Attacken an
+      e.flashT = Math.max(0, e.flashT-dt);
+      if(e.stunT > 0){ e.stunT -= dt; }
+      else {
+        const tgt = P.x + P.w/2 - e.w/2;
+        e.dir = tgt > e.x+2 ? 1 : (tgt < e.x-2 ? -1 : e.dir);
+        const air = e.y < e.y0 - 1;
+        e.x += e.dir*e.spd*(air ? 1.5 : 1)*dt;      // im Flug schneller
+        e.x = Math.max(e.x0-110, Math.min(e.doorX - e.w - 4, e.x));
+        e.jumpT -= dt;
+        if(!air && e.jumpT <= 0){ e.vy = -300; e.jumpT = 1.5 + Math.random()*0.9; AU.swoop(); }
+      }
+      e.vy += 780*dt; e.y += e.vy*dt;
+      if(e.y >= e.y0){ e.y = e.y0; e.vy = 0; }
     }
 
     if(!overlap(P, e)) continue;
@@ -1503,22 +1862,24 @@ function updateEnemies(dt){
       hurt(true);
       continue;
     }
-    if(P.rolling && e.type === 'guard'){ killEnemy(e); AU.stomp(); continue; } // Panzer-Roll zerschmettert
+    if(P.rolling && (e.type === 'guard' || e.type === 'flyer')){ // Panzer-Roll zerschmettert
+      killEnemy(e); AU.stomp(); hitStop(0.05); continue;
+    }
 
     const stomp = P.vy > 40 && (P.y + P.h) < e.y + e.h*0.65;
     if(stomp && !P.rolling){
       const high = (gt - lastTapT) < 0.16; // Shell-Bounce: Tipp beim Aufprall
-      if(e.type === 'boss'){
-        e.hp--; e.flashT = 0.25; e.stunT = 0.6;
-        vib(15); AU.bossHit();
+      if(e.type === 'boss' || e.type === 'corvo'){
+        e.hp--; e.flashT = 0.25; e.stunT = e.type === 'corvo' ? 0.45 : 0.6;
+        vib(15); AU.bossHit(); hitStop(0.09);
         cam.shake = Math.max(cam.shake, 3);
         puff(e.x+e.w/2, e.y, '#fff', 4);
-        if(e.hp <= 0){ killEnemy(e); bossDead = true; openDoor(); AU.door(); }
-      } else { killEnemy(e); AU.stomp(); }
+        if(e.hp <= 0){ killEnemy(e); bossDead = true; openDoor(); AU.door(); hitStop(0.16); }
+      } else { killEnemy(e); AU.stomp(); hitStop(0.05); }
       P.vy = high ? -338 : -200;
       if(high){ sparkle(P.x+6, P.y+P.h, PAL.shard); AU.bounce(); }
       jumpBufT = -9;
-    } else if(e.type === 'boss' && P.rolling){
+    } else if((e.type === 'boss' || e.type === 'corvo') && P.rolling){
       P.vx = -40; P.vy = -140; // Boss blockt den Roll, prallt ab
     } else {
       hurt(true);
@@ -1552,9 +1913,12 @@ function updateParticles(dt){
 }
 
 function update(dt){
+  // Hit-Stop: bei harten Treffern friert die Welt einen Wimpernschlag ein
+  if(hitStopT > 0){ hitStopT -= dt; return; }
   stateT += dt;
   if(pointerHeld) holdT += dt;
   flashT = Math.max(0, flashT - dt);
+  hurtFlashT = Math.max(0, hurtFlashT - dt);
   AU.setMusic(state === 'play' || state === 'rescue'); // Loop nur im Spiel
   cam.shake = Math.max(0, cam.shake - 14*dt); // Shake in jedem State abbauen (sonst zittert Gameover/Pause dauerhaft)
 
@@ -1565,8 +1929,24 @@ function update(dt){
     updateEnemies(dt);
     updateParticles(dt);
     if(checkpoint && checkpoint.active && checkpoint.animT < 2) checkpoint.animT += dt;
-    // Kamera: schaut in Fahrtrichtung voraus, folgt vertikal (Etagen-Level)
-    const look = P.dir === 1 ? 100 : VW - 100 - P.w;
+    // Broeckel-Platten: zerfallen kurz nach dem Betreten
+    for(const cr of crumbles){
+      if(cr.t < 0) continue;
+      cr.t += dt;
+      if(grid[cr.r][cr.c] === T_CRUMBLE){
+        if(Math.random() < dt*22)
+          particles.push({x:cr.c*TILE+2+Math.random()*12, y:cr.r*TILE+14, vx:0, vy:40,
+                          life:0.3, col:PAL.rockDark, s:1});
+        if(cr.t > 0.5){
+          grid[cr.r][cr.c] = 0; vgrid[cr.r][cr.c] = -1;
+          puff(cr.c*TILE+8, cr.r*TILE+8, PAL.rock, 5);
+          AU.crumble();
+        }
+      }
+    }
+    // Kamera: schaut in Fahrtrichtung voraus (weiter bei Tempo), folgt vertikal
+    const ahead = Math.min(130, 90 + (P.vx - BASE_SPD)*0.25);
+    const look = P.dir === 1 ? ahead : VW - ahead - P.w;
     const target = Math.max(0, Math.min(P.x - look, MAPW*TILE - VW));
     cam.x += (target - cam.x)*Math.min(1, 12*dt);
     const targetY = Math.max(0, Math.min(P.y - VH*0.55, MAPH*TILE - VH));
@@ -1841,7 +2221,7 @@ function drawCrow(e){
   if(x < -30 || x > VW+30) return;
   const flap = Math.sin(e.t*10) > 0 ? 1 : 0;
   const dir = e.dir || 1;
-  if(e.type === 'boss'){
+  if(e.type === 'boss' || e.type === 'corvo'){
     const fl = e.flashT > 0 && Math.floor(gt*20)%2 === 0;
     const B = fl ? '#ffffff' : PAL.crow, W = fl ? '#ffffff' : PAL.crowWing;
     const D = fl ? '#ffffff' : PAL.crowDark;
@@ -1868,17 +2248,39 @@ function drawCrow(e){
     px(x+(dir>0?19:4), y+3, 1, 1, '#ffffff');  // Augen-Glanz
     px(x+(dir>0?17:2), y, 3, 1, D);            // zornige Braue (schraeg)
     px(x+(dir>0?19:1), y+1, 2, 1, D);
-    // GOLDENE KRONE
-    px(x+hx+1, y-3, 8, 3, PAL.gold);
-    px(x+hx+1, y-5, 2, 2, PAL.gold);
-    px(x+hx+4, y-6, 2, 3, PAL.gold);
-    px(x+hx+7, y-5, 2, 2, PAL.gold);
-    px(x+hx+1, y-5, 1, 1, PAL.goldHi);
-    px(x+hx+4, y-6, 1, 1, PAL.goldHi);
-    px(x+hx+4, y-2, 2, 1, PAL.heart);          // Rubin
+    if(e.type === 'corvo'){
+      // GOLDENE KRONE - nur der Koenig selbst traegt sie
+      px(x+hx+1, y-3, 8, 3, PAL.gold);
+      px(x+hx+1, y-5, 2, 2, PAL.gold);
+      px(x+hx+4, y-6, 2, 3, PAL.gold);
+      px(x+hx+7, y-5, 2, 2, PAL.gold);
+      px(x+hx+1, y-5, 1, 1, PAL.goldHi);
+      px(x+hx+4, y-6, 1, 1, PAL.goldHi);
+      px(x+hx+4, y-2, 2, 1, PAL.heart);        // Rubin
+    } else {
+      // Eisenhelm der Wache
+      px(x+hx, y-2, 10, 3, PAL.rockDark);
+      px(x+hx+2, y-4, 6, 2, PAL.rock);
+      px(x+hx+3, y-3, 2, 1, PAL.rockHi);
+    }
     px(x+4, y+20, 3, 3, PAL.beak); px(x+14, y+20, 3, 3, PAL.beak);
-    // HP-Anzeige
-    for(let i=0;i<3;i++) px(x+2+i*7, y-10, 5, 4, i < e.hp ? PAL.heart : '#00000044');
+    // HP-Anzeige (zentriert, Laenge nach hpMax)
+    const hpm = e.hpMax || 3, hx0 = x + e.w/2 - (hpm*7-2)/2;
+    for(let i=0;i<hpm;i++) px(hx0+i*7, y-10, 5, 4, i < e.hp ? PAL.heart : '#00000044');
+  } else if(e.type === 'flyer'){
+    // Sturmkraehe: fliegt mit grossen Schwingen, Krallen angezogen
+    const wy = Math.sin(e.t*9) > 0 ? -2 : 1;
+    px(x+(dir>0?-2:12), y+4, 4, 2, PAL.crowDark);      // Schwanz
+    px(x+1, y+2, 12, 8, PAL.crow);
+    px(x+1, y+4+wy, 11, 4, PAL.crowWing);              // grosse Schwinge
+    px(x+3, y+6+wy, 2, 1, PAL.crowDark);
+    px(x+7, y+6+wy, 2, 1, PAL.crowDark);
+    px(x+(dir>0?7:0), y-1, 7, 7, PAL.crow);
+    px(x+(dir>0?13:-2), y+1, 3, 2, PAL.beak);
+    px(x+(dir>0?10:2), y, 2, 2, '#ffd447');
+    px(x+(dir>0?11:2), y, 1, 1, PAL.crowDark);
+    px(x+2, y+10, 3, 1, PAL.crowDark);                 // angezogene Krallen
+    px(x+9, y+10, 3, 1, PAL.crowDark);
   } else if(e.type === 'sleeper'){
     px(x, y+6, 3, 2, PAL.crowDark);            // Schwanz
     px(x+1, y+3, 12, 10, PAL.crow);
@@ -1960,12 +2362,17 @@ function drawBuddy(x, y, hop){
     px(x+8, y-5+dy, 1, 4, PAL.bowHi);   // Innenohr
     px(x+11, y-5+dy, 1, 4, PAL.bowHi);
     px(x-2, y+3+dy, 3, 3, '#ffffff');   // Puschelschwanz
+  } else if(W.buddyKind === 'turtle'){
+    px(x-3, y+1+dy, 6, 7, c2);          // Opas runder Panzer (hinten)
+    px(x-2, y+dy, 4, 2, '#8fd4a8');     // Panzerglanz
+    px(x-2, y+2+dy, 1, 4, '#1f5c3f');   // Panzernaht
   } else {
     px(x-4, y+4+dy, 5, 2, c2);          // flacher Gecko-Schwanz
   }
   px(x, y+3+dy, 9, 5, c1);              // Koerper
   px(x+7, y+dy, 5, 5, c1);              // Kopf
   px(x+10, y+1+dy, 1, 1, '#000');       // Auge
+  if(W.buddyKind === 'turtle') px(x+8, y+4+dy, 4, 2, '#e8e8f0');  // weisser Opa-Bart
   px(x+1, y+8+dy, 2, 2, c2); px(x+6, y+8+dy, 2, 2, c2);
 }
 
@@ -2010,7 +2417,9 @@ function drawShelly(){
     px(cxm-2, cy-3, 3, 2, PAL.shellHi);
     px(cxm+3, cy-6, 3, 2, PAL.bow); // Schleife blitzt hervor
   } else {
-    const bob = P.grounded ? Math.round(Math.sin(gt*13))* 1 : 0;
+    // Squash beim Landen (+2 = geduckt), Stretch im Sprung-Aufstieg (-1)
+    const bob = (P.grounded ? Math.round(Math.sin(gt*13)) : (P.vy < -120 ? -1 : 0))
+              + (P.squashT > 0 ? 2 : 0);
     const lf = P.grounded ? Math.floor(gt*12)%3 : 1;       // Paddel-Beine, 3 Frames
     // Beine (Paddel-Animation)
     px(x+2, boardY-3-(lf===0?1:0), 3, 4+(lf===0?1:0), PAL.bodyDark);
@@ -2118,6 +2527,9 @@ function drawHUD(){
   px(7, 15, 7, 5, PAL.salad); px(8, 14, 5, 2, PAL.salad);
   px(8, 15, 2, 1, PAL.saladHi); px(10, 15, 1, 5, PAL.saladDark);
   txt('X'+saladCount, 17, 15, '#fff', 8);
+  // Pause-Knopf (Touch)
+  hudPanel(VW-62, 3, 15, 14);
+  px(VW-58, 6, 2, 8, '#fff'); px(VW-54, 6, 2, 8, '#fff');
   // rechtes Panel: Sanduhr-Splitter (fuellen sich von links)
   hudPanel(VW-44, 3, 41, 14);
   for(let i=0;i<3;i++){
@@ -2182,7 +2594,7 @@ function drawTitle(){
   px(ox, oy-4, 2, 2, PAL.bowDark);
   px(ox-4, oy+18, 5, 5, PAL.bodyDark); px(ox+6, oy+18, 5, 5, PAL.bodyDark);
   if(Math.floor(gt*1.6)%2===0) txt('TIPPEN oder LEERTASTE', VW/2, 156, '#fff', 9, 'center');
-  txt('PROTOTYP v0.6 - WELTKARTE + SNACK-STAND', VW/2, 169, '#ffffffaa', 6, 'center');
+  txt('PROTOTYP v0.7 - 16 LEVEL IN 4 WELTEN', VW/2, 169, '#ffffffaa', 6, 'center');
   drawMuteIcon();
 }
 
@@ -2216,8 +2628,8 @@ function drawMiniShard(x, y, on){
 // WELTKARTE (Overworld) – Shelly laeuft von Knoten zu Knoten
 // ============================================================
 const ZONE_COLS = WORLDS.map(w => Object.assign({}, PAL_BASE, w.theme));
-const ZONE_EDGE = [232, 411];   // x-Grenzen Wiese|Pilzwald|Frost
-function mapZoneAt(x){ return x < ZONE_EDGE[0] ? 0 : x < ZONE_EDGE[1] ? 1 : 2; }
+const ZONE_EDGE = [284, 500, 718];   // x-Grenzen Wiese|Pilzwald|Frost|Festung
+function mapZoneAt(x){ let z = 0; for(const e of ZONE_EDGE){ if(x >= e) z++; } return z; }
 
 function drawMapDeco(sx, y, zone, v){
   const T = ZONE_COLS[zone];
@@ -2228,9 +2640,12 @@ function drawMapDeco(sx, y, zone, v){
   } else if(zone === 1){
     if(v === 0){ px(sx+1, y-3, 2, 3, PAL.shroomStem); px(sx-1, y-6, 6, 3, PAL.shroomCap); px(sx, y-5, 1, 1, '#fff'); px(sx+3, y-6, 1, 1, '#fff'); }
     else { px(sx+1, y-2, 2, 2, T.dirtMid); px(sx-1, y-7, 6, 5, T.treeFarDk); px(sx, y-9, 4, 3, T.treeFar); }
-  } else {
+  } else if(zone === 2){
     if(v === 0){ px(sx+1, y-2, 2, 2, T.dirtMid); px(sx-1, y-5, 6, 3, T.treeFarDk); px(sx, y-8, 4, 3, T.treeFar); px(sx, y-9, 4, 1, '#fff'); }
     else { px(sx-1, y-2, 6, 2, '#fff'); px(sx, y-3, 4, 1, '#fff'); }
+  } else {
+    if(v === 0){ px(sx+1, y-5, 1, 5, T.dirtMid); px(sx, y-8, 3, 4, '#c9a227'); px(sx+1, y-9, 1, 1, '#fff'); }  // Fackel
+    else { px(sx-1, y-3, 6, 3, T.dirtMid); px(sx-1, y-5, 2, 2, T.dirtMid); px(sx+2, y-5, 2, 2, T.dirtMid); }  // Zinnen
   }
 }
 
@@ -2251,8 +2666,8 @@ function drawMap(){
   px(0, 0, VW, 46, PAL_BASE.sky2);
   px(0, 40, VW, 6, PAL_BASE.sky3);
   // Bodenflaechen je Zone (mit Dither-Uebergang)
-  for(let z=0; z<3; z++){
-    const x0 = z === 0 ? 0 : ZONE_EDGE[z-1], x1 = z < 2 ? ZONE_EDGE[z] : MAP_W;
+  for(let z=0; z<ZONE_COLS.length; z++){
+    const x0 = z === 0 ? 0 : ZONE_EDGE[z-1], x1 = z < ZONE_EDGE.length ? ZONE_EDGE[z] : MAP_W;
     const sx = Math.max(0, x0-cx), ex = Math.min(VW, x1-cx);
     if(ex <= sx) continue;
     const T = ZONE_COLS[z];
@@ -2267,7 +2682,7 @@ function drawMap(){
         if((yy/4 + k) % 2 === 0) px(gx-8+k*4 - cx, yy, 4, 4, T2.grass);
   }
   // Deko (deterministisch verteilt, ober- und unterhalb der Knotenreihe)
-  for(let i=0; i<46; i++){
+  for(let i=0; i<72; i++){
     const dx = (i*67 + hash(i*13)%41) % MAP_W;
     const band = hash(i*7)%2;
     const dy = band ? 66 + hash(i*3)%8 : 138 + hash(i*3)%9;
@@ -2280,7 +2695,7 @@ function drawMap(){
     drawMapDeco(sx, dy, mapZoneAt(dx), hash(i*29)%3);
   }
   // Zonen-Titel
-  const zc = [[116,'WIESENTAL'],[321,'PILZWALD'],[515,'FROSTKLIPPEN']];
+  const zc = [[128,'WIESENTAL'],[390,'PILZWALD'],[608,'FROSTKLIPPEN'],[826,'CORVOS FESTUNG']];
   zc.forEach(([zx, name], i) => {
     txt('WELT ' + (i+1), zx - cx, 26, '#ffffffcc', 7, 'center');
     txt(name + (worldDone(i) ? ' !' : ''), zx - cx, 35, '#fff', 8, 'center');
@@ -2327,7 +2742,7 @@ function drawMap(){
       if(!open) drawLock(sx-4, n.y-20, '#3f454c');
       else {
         for(let s=0; s<3; s++) drawMiniShard(sx-10+s*7, n.y-19, s < p.best);
-        if(n.l === 2 && !p.done){                    // Kaefig-Silhouette am Welt-Finale
+        if(n.l === WORLDS[n.w].levels.length-1 && !p.done){   // Kaefig-Silhouette am Welt-Finale
           const W = WORLDS[n.w];
           px(sx+11, n.y-18, 8, 8, '#00000022');
           for(let k=0; k<3; k++) px(sx+11+k*3, n.y-18, 1, 8, PAL.goldDk);
@@ -2477,6 +2892,11 @@ function render(){
   // sanfter Screen-Flash beim Splitter
   if(flashT > 0){
     ctx.fillStyle = 'rgba(255,255,255,' + Math.min(0.55, flashT*3.2).toFixed(3) + ')';
+    ctx.fillRect(0, 0, VW, VH);
+  }
+  // rote Vignette beim Treffer
+  if(hurtFlashT > 0){
+    ctx.fillStyle = 'rgba(255,60,70,' + Math.min(0.3, hurtFlashT*1.6).toFixed(3) + ')';
     ctx.fillRect(0, 0, VW, VH);
   }
   drawHUD();

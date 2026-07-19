@@ -13,6 +13,8 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Vollbild: Statusleiste weg, das Spiel bekommt den ganzen Schirm -->
+        <item name="android:windowFullscreen">true</item>
     </style>
 
 
