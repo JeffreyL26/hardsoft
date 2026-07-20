@@ -711,6 +711,7 @@ const MNODES = [
   {x:742, y:92,  w:3, l:0}, {x:798, y:122, w:3, l:1}, {x:854, y:90,  w:3, l:2}, {x:908, y:118, w:3, l:3}
 ];
 let mapPos = 0, mapTarget = null, mapStep = null;   // mapStep = {from,to,t}
+let mapCursor = 0;   // Browse-Cursor: laeuft frei ueber ALLE Knoten (auch gesperrte)
 let mapShellyX = MNODES[0].x, mapShellyY = MNODES[0].y, mapCamX = 0, mapDir = 1;
 function nodeUnlocked(n){ return n.shop ? isUnlocked(1, 0) : isUnlocked(n.w, n.l); }
 function nodeIndexOf(w, l){ return MNODES.findIndex(n => !n.shop && n.w === w && n.l === l); }
@@ -746,15 +747,23 @@ function activateNode(){
   if(n.shop){ shopSel = 0; state = 'shop'; stateT = 0; }
   else startLevel(n.w, n.l);
 }
+// Tastatur/Touch am Browse-Cursor: aktueller Knoten startet, freigeschaltetes
+// Ziel laeuft Shelly an, Gesperrtes gibt nur einen "Nope"-Ton.
+function activateCursor(){
+  if(mapStep) return;
+  if(mapCursor === mapPos){ activateNode(); return; }
+  if(!nodeUnlocked(MNODES[mapCursor])){ AU.hurt(); return; }
+  mapTarget = mapCursor; AU.click();
+}
 // Nach einem Levelabschluss: zurueck auf den gespielten Knoten; wenn dadurch
 // der naechste Knoten aufging, laeuft Shelly automatisch hin (Mario-Feeling).
 function returnToMap(){
   const idx = nodeIndexOf(curWorld, curLvl);
   if(idx >= 0){
-    mapPos = idx; mapStep = null; mapTarget = null;
+    mapPos = idx; mapStep = null; mapTarget = null; mapCursor = idx;
     mapShellyX = MNODES[idx].x; mapShellyY = MNODES[idx].y;
     mapCamX = Math.max(0, Math.min(mapShellyX - 150, MAP_W - VW));
-    if(idx + 1 < MNODES.length && nodeUnlocked(MNODES[idx+1])) mapTarget = idx + 1;
+    if(idx + 1 < MNODES.length && nodeUnlocked(MNODES[idx+1])){ mapTarget = idx + 1; mapCursor = idx + 1; }
   }
   state = 'map'; stateT = 0;
 }
@@ -1425,11 +1434,12 @@ function tap(cp){
         if(Math.abs(wx - n.x) <= 14 && Math.abs(cp.y - n.y) <= 15){ hit = i; break; }
       }
       if(hit < 0) return;
+      mapCursor = hit;                                  // Cursor auf angetippten Knoten
       if(hit === mapPos && !mapStep){ activateNode(); return; }
-      if(!nodeUnlocked(MNODES[hit])){ AU.hurt(); return; }
+      if(!nodeUnlocked(MNODES[hit])){ AU.click(); return; }  // gesperrt: nur ansehen
       mapTarget = hit; AU.click();
     } else if(!mapStep){
-      activateNode();                                   // Tastatur: Space am Knoten
+      activateCursor();                                 // Tastatur: Space am Cursor
     }
   }
   else if(state === 'shop'){
@@ -1465,11 +1475,8 @@ addEventListener('keydown', e => {
   if(e.repeat) return;
   AU.init(); AU.resume();
   if(state === 'map' && (e.code==='ArrowLeft' || e.code==='ArrowRight')){
-    const nxt = (mapTarget !== null ? mapTarget : mapPos) + (e.code==='ArrowLeft' ? -1 : 1);
-    if(nxt >= 0 && nxt < MNODES.length){
-      if(nodeUnlocked(MNODES[nxt])){ mapTarget = nxt; AU.click(); }
-      else AU.hurt();
-    }
+    const nxt = mapCursor + (e.code==='ArrowLeft' ? -1 : 1);   // frei blaettern, auch ueber Gesperrtes
+    if(nxt >= 0 && nxt < MNODES.length){ mapCursor = nxt; AU.click(); }
     e.preventDefault(); return;
   }
   if(state === 'shop'){
@@ -2191,7 +2198,9 @@ function update(dt){
       mapShellyX = MNODES[mapPos].x;
       mapShellyY = MNODES[mapPos].y + Math.round(Math.sin(gt*3))*1;  // Idle-Wippen
     }
-    const mtgt = Math.max(0, Math.min(mapShellyX - 150, MAP_W - VW));
+    // Kamera folgt beim Laufen Shelly, sonst dem Browse-Cursor (Blaettern zu Gesperrtem)
+    const focusX = mapStep ? mapShellyX : MNODES[mapCursor].x;
+    const mtgt = Math.max(0, Math.min(focusX - VW/2 + 10, MAP_W - VW));
     mapCamX += (mtgt - mapCamX)*Math.min(1, 10*dt);
     updateParticles(dt);
   } else if(state === 'pause'){
@@ -3025,25 +3034,44 @@ function drawMap(){
       }
     }
   }
+  // Auswahl-Cursor: bobbelnder Pfeil ueber dem gerade angewaehlten Knoten
+  {
+    const n = MNODES[mapCursor], sxx = Math.round(n.x - cx);
+    if(sxx > -12 && sxx < VW+12){
+      const ay = n.y - 26 - Math.round(Math.abs(Math.sin(gt*4))*2);
+      const c = nodeUnlocked(n) ? PAL.goldHi : '#dfe4ea';
+      px(sxx-3, ay,   6, 1, c);
+      px(sxx-2, ay+1, 4, 1, c);
+      px(sxx-1, ay+2, 2, 1, c);
+    }
+  }
   // Shelly auf der Karte
   drawMapShelly(Math.round(mapShellyX - cx), Math.round(mapShellyY - 8));
   // Info-Leiste unten
-  const cur = MNODES[mapTarget !== null ? mapTarget : mapPos];
+  const cur = MNODES[mapCursor];
   px(0, 154, VW, 26, '#101f1a');
   px(0, 154, VW, 1, PAL.gold);
+  const curOpen = nodeUnlocked(cur), onCur = mapCursor === mapPos && !mapStep;
   if(cur.shop){
     txt('SHELLYS SNACK-STAND', 8, 158, PAL.goldHi, 8);
-    txt('Upgrades gegen Salat!', 8, 168, '#cfe0d0', 7);
-    if(!mapStep && MNODES[mapPos].shop && Math.floor(gt*1.6)%2===0)
+    txt(curOpen ? 'Upgrades gegen Salat!' : 'Erst Welt 1 schaffen!', 8, 168, '#cfe0d0', 7);
+    if(onCur && curOpen && Math.floor(gt*1.6)%2===0)
       txt('TIPPEN = EINKAUFEN', VW-10, 162, '#fff', 8, 'right');
   } else {
     const W = WORLDS[cur.w], p = prog[cur.w][cur.l];
     txt('WELT ' + (cur.w+1) + '-' + (cur.l+1) + ': ' + W.levels[cur.l].name, 8, 158, '#fff', 8);
-    for(let s=0; s<3; s++) drawMiniShard(8+s*8, 168, s < p.best);
-    if(p.done) txt('GESCHAFFT', 36, 168, '#7ed957', 7);
-    if(!mapStep && !MNODES[mapPos].shop && MNODES[mapPos] === cur && Math.floor(gt*1.6)%2===0)
+    if(!curOpen){
+      txt('GESPERRT', 8, 168, '#c9d2da', 7);
+    } else {
+      for(let s=0; s<3; s++) drawMiniShard(8+s*8, 168, s < p.best);
+      if(p.done) txt('GESCHAFFT', 36, 168, '#7ed957', 7);
+    }
+    if(onCur && curOpen && Math.floor(gt*1.6)%2===0)
       txt('TIPPEN = START', VW-10, 162, '#fff', 8, 'right');
   }
+  // Blaetter-Hinweis, sobald man vom aktuellen Knoten wegscrollt
+  if(mapCursor !== mapPos && Math.floor(gt*1.6)%2===0)
+    txt('← → BLAETTERN', VW-10, 172, '#9fb0a4', 7, 'right');
   // HUD oben: Salat-Bank + Splitter-Bilanz
   hudPanel(3, 3, 58, 13);
   px(7, 6, 7, 5, PAL.salad); px(8, 5, 5, 2, PAL.salad); px(10, 6, 1, 5, PAL.saladDark);
