@@ -712,6 +712,7 @@ const MNODES = [
 ];
 let mapPos = 0, mapTarget = null, mapStep = null;   // mapStep = {from,to,t}
 let mapCursor = 0;   // Browse-Cursor: laeuft frei ueber ALLE Knoten (auch gesperrte)
+let mapDrag = null;  // Touch-Wisch auf der Karte: {id, x, cam0, moved, cp}
 let mapShellyX = MNODES[0].x, mapShellyY = MNODES[0].y, mapCamX = 0, mapDir = 1;
 function nodeUnlocked(n){ return n.shop ? isUnlocked(1, 0) : isUnlocked(n.w, n.l); }
 function nodeIndexOf(w, l){ return MNODES.findIndex(n => !n.shop && n.w === w && n.l === l); }
@@ -1514,10 +1515,32 @@ addEventListener('pointerdown', e => {
   }
   activePointers.add(e.pointerId);
   pointerHeld = true;
-  if(activePointers.size === 1){ holdT = 0; tap(cp); } // nur der erste Finger zaehlt als Tap/Hold
+  if(activePointers.size === 1){                        // nur der erste Finger zaehlt als Tap/Hold
+    holdT = 0;
+    // Auf der Weltkarte: Wisch-Geste starten, echter Tap wird beim Loslassen entschieden
+    if(state === 'map'){ mapDrag = { id:e.pointerId, x:cp.x, cam0:mapCamX, moved:false, cp }; }
+    else tap(cp);
+  }
 });
-addEventListener('pointerup',   e => { activePointers.delete(e.pointerId); pointerHeld = activePointers.size > 0; });
-addEventListener('pointercancel',e => { activePointers.delete(e.pointerId); pointerHeld = activePointers.size > 0; });
+addEventListener('pointermove', e => {
+  if(!mapDrag || e.pointerId !== mapDrag.id || state !== 'map') return;
+  const cp = canvasPos(e);
+  const dx = cp.x - mapDrag.x;
+  if(Math.abs(dx) > 3) mapDrag.moved = true;            // ab 3px zaehlt es als Wisch, nicht als Tap
+  mapCamX = Math.max(0, Math.min(mapDrag.cam0 - dx, MAP_W - VW));   // Kamera folgt dem Finger
+});
+function endMapDrag(e){
+  if(!mapDrag || e.pointerId !== mapDrag.id) return false;
+  if(mapDrag.moved){                                    // war ein Wisch -> Cursor auf Knoten nahe Bildmitte
+    const centerX = mapCamX + VW/2;
+    let best = 0, bd = 1e9;
+    for(let i=0;i<MNODES.length;i++){ const d = Math.abs(MNODES[i].x - centerX); if(d < bd){ bd = d; best = i; } }
+    if(best !== mapCursor){ mapCursor = best; AU.click(); }
+  } else tap(mapDrag.cp);                               // war ein echter Tap -> normale Knoten-Logik
+  mapDrag = null; return true;
+}
+addEventListener('pointerup',   e => { endMapDrag(e); activePointers.delete(e.pointerId); pointerHeld = activePointers.size > 0; });
+addEventListener('pointercancel',e => { if(mapDrag && e.pointerId === mapDrag.id) mapDrag = null; activePointers.delete(e.pointerId); pointerHeld = activePointers.size > 0; });
 addEventListener('touchmove', e => e.preventDefault(), {passive:false});
 addEventListener('contextmenu', e => e.preventDefault());
 
@@ -1533,7 +1556,7 @@ document.addEventListener('visibilitychange', () => {
   else AU.resume();
 });
 // Fokusverlust: gehaltene Eingaben loslassen (keyup/pointerup kommen sonst nie an)
-addEventListener('blur', () => { pointerHeld = false; keyRoll = false; activePointers.clear(); padJumpPending = false; });
+addEventListener('blur', () => { pointerHeld = false; keyRoll = false; activePointers.clear(); padJumpPending = false; mapDrag = null; });
 
 // ============================================================
 // UPDATE
@@ -2198,10 +2221,13 @@ function update(dt){
       mapShellyX = MNODES[mapPos].x;
       mapShellyY = MNODES[mapPos].y + Math.round(Math.sin(gt*3))*1;  // Idle-Wippen
     }
-    // Kamera folgt beim Laufen Shelly, sonst dem Browse-Cursor (Blaettern zu Gesperrtem)
-    const focusX = mapStep ? mapShellyX : MNODES[mapCursor].x;
-    const mtgt = Math.max(0, Math.min(focusX - VW/2 + 10, MAP_W - VW));
-    mapCamX += (mtgt - mapCamX)*Math.min(1, 10*dt);
+    // Waehrend eines aktiven Wischs steuert der Finger die Kamera direkt.
+    // Sonst folgt sie beim Laufen Shelly, sonst dem Browse-Cursor (Blaettern zu Gesperrtem).
+    if(!(mapDrag && mapDrag.moved)){
+      const focusX = mapStep ? mapShellyX : MNODES[mapCursor].x;
+      const mtgt = Math.max(0, Math.min(focusX - VW/2 + 10, MAP_W - VW));
+      mapCamX += (mtgt - mapCamX)*Math.min(1, 10*dt);
+    }
     updateParticles(dt);
   } else if(state === 'pause'){
     // eingefroren – nur auf Tipp warten
@@ -3069,9 +3095,13 @@ function drawMap(){
     if(onCur && curOpen && Math.floor(gt*1.6)%2===0)
       txt('TIPPEN = START', VW-10, 162, '#fff', 8, 'right');
   }
-  // Blaetter-Hinweis, sobald man vom aktuellen Knoten wegscrollt
-  if(mapCursor !== mapPos && Math.floor(gt*1.6)%2===0)
-    txt('← → BLAETTERN', VW-10, 172, '#9fb0a4', 7, 'right');
+  // Blaetter-Hinweis: am Startknoten Geste erklaeren, beim Blaettern dezent halten
+  if(!mapStep){
+    if(mapCursor === mapPos && Math.floor(gt*1.2)%2===0)
+      txt('WISCHEN zum Blaettern', VW-10, 172, '#9fb0a4', 7, 'right');
+    else if(mapCursor !== mapPos)
+      txt('WISCHEN ↔', VW-10, 172, '#9fb0a4', 7, 'right');
+  }
   // HUD oben: Salat-Bank + Splitter-Bilanz
   hudPanel(3, 3, 58, 13);
   px(7, 6, 7, 5, PAL.salad); px(8, 5, 5, 2, PAL.salad); px(10, 6, 1, 5, PAL.saladDark);
